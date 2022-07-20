@@ -1,0 +1,1 @@
+uwsgi --http-socket :8086 --plugin python --wsgi-file bicchiere.wsgi --processes=4

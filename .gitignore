@@ -1,0 +1,5 @@
+# created by virtualenv automatically
+bicchiere_sessions/
+bicchiere_sessions.sqlite
+__pycache__/
+old*
