@@ -1,6 +1,8 @@
 
 # Bicchiere
 
+![Un bel bicchiere di Campari](static/img/bicchiere-rosso-2.jpg "Bicchiere Logo")
+
 ## Yet another python WSGI micro-framework
 
 Following Flask and Bottle footsteps, adding a bit of italian flavor :-)
