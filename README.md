@@ -11,7 +11,7 @@ This is a work in progress at a very initial stage, so it won't be available to 
 
 So, as of now, only available means of installing/using it is through git clone, or just raw downloading bicchiere.py as Bicchiere follows the footsteps of Bottle.py in the sense of being a single file framework.
 
-## ![Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
+## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
 
 ## A drop from Bicchiere
 
