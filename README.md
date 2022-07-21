@@ -1,5 +1,7 @@
 
-# Bicchiere: Yet another python WSGI micro-framework
+# Bicchiere
+
+## Yet another python WSGI micro-framework
 
 Following Flask and Bottle footsteps, adding a bit of italian flavor :-)
 
