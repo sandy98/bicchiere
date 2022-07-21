@@ -3,3 +3,4 @@ bicchiere_sessions/
 bicchiere_sessions.sqlite
 __pycache__/
 old*
+.gitattributes
