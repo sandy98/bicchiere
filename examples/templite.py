@@ -74,7 +74,7 @@ class TemplateLight:
         code.add_line("to_str = str")
 
         buffered = []
-        
+
         def flush_output():
             """Force `buffered` to the code builder."""
             if len(buffered) == 1:
@@ -82,7 +82,7 @@ class TemplateLight:
             elif len(buffered) > 1:
                 code.add_line("extend_result([%s])" % ", ".join(buffered))
             del buffered[:]
-        
+
         ops_stack = []
 
         tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
