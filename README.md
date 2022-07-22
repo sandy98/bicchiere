@@ -1,7 +1,8 @@
 
-# Bicchiere
+<h1 align="center">Bicchiere</h1>
 
-![Un bel bicchiere di Campari](static/img/bicchiere-rosso-2.jpg "Bicchiere Logo")
+
+<p align="center"><img title="Un bel bicchiere di Campari" src="static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
 
 ## Yet another python WSGI micro-framework
 
