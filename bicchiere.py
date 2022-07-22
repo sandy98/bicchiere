@@ -653,6 +653,7 @@ default_config = {
         'session_directory': 'bicchiere_sessions',
         'session_saving_interval': 5,
         'static_directory': 'static',
+        'templates_directory': 'templates',
         'allow_directory_listing': False
         }
 
@@ -916,6 +917,20 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data.__dict__.setdefault('args', None)
         self.__local_data.__dict__.setdefault('form', None)
         self.__local_data.__dict__.setdefault('headers_set', False)
+
+    ### Template related stuff
+
+    @staticmethod
+    def get_template_dir():
+        templates_root = Bicchiere.config.get('templates_directory', 'templates')
+        return os.path.join(os.getcwd(), templates_root)
+
+    @staticmethod
+    def get_template_fullpath(template_file):
+        return os.path.join(Bicchiere.get_template_dir(), template_file)
+
+    ### End of template related stuff
+
 
     def __call__(self, environ, start_response, **kwargs):
         self.init_local_data() # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
