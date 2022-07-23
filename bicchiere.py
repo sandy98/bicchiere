@@ -457,7 +457,7 @@ class TemplateLight:
           <ul>
             {% for team in teams %}
               <li> {{ team }} </li>
-            {%endfor}
+            {% endfor %}
           </ul>
         </p>
         """
@@ -1923,32 +1923,6 @@ class Bicchiere(BicchiereMiddleware):
             return "{}{}{}".format(prefix, info, suffix)
 
         return app
-
-    @staticmethod
-    def render_template(block, **kw):
-        pointer = 0
-        response = ""
-        while pointer < len(block):
-            next_token = block[pointer : ].find('{{')
-            if next_token == -1:
-                response += block[pointer : ]
-                return response
-            next_token += pointer
-            response += block[pointer : next_token]
-            pointer = next_token + 2
-            next_token = block[pointer : ].find('}}')
-            if next_token == - 1:
-                raise ValueError("Malformed template")
-            next_token += pointer
-            expression = block[pointer : next_token].strip()
-            try:
-                evaluated = eval(expression, kw)
-                response += str(evaluated)
-            except Exception as exc:
-                print(f'Exception ocurred: {str(exc)}')
-                raise
-            pointer = next_token + 2
-        return response
 
     @classmethod
     def get_version(cls):

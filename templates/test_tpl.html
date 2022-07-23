@@ -1,0 +1,11 @@
+
+        <h2> Hello, I am {{ user  }}. </h2>
+        <p>These are my favourite teams, in no particular order.<p>
+        <p>
+          <ul>
+            {% for team in teams %}
+              <li> {{ team }} </li>
+            {% endfor %}
+          </ul>
+        </p>
+        
