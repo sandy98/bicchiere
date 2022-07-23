@@ -449,14 +449,28 @@ class TemplateSyntaxError(BaseException):
     pass
 
 class TemplateLight:
-    def __init__(self, text, *contexts):
+
+    test_tpl = """
+        <h2> Hello, I am {{ user  }}. </h2>
+        <p>These are my favourite teams, in no particular order.<p>
+        <p>
+          <ul>
+            {% for team in teams %}
+              <li> {{ team }} </li>
+            {%endfor}
+          </ul>
+        </p>
+        """
+
+    def __init__(self, text, **contexts):
         """Construct a Templite with the given `text`.
         `contexts` are dictionaries of values to use for future renderings.
         These are good for filters and global values.
         """
         self.context = {}
-        for context in contexts:
-            self.context.update(context)
+        #for context in contexts:
+            #self.context.update(context)
+        self.context.update(contexts)
         self.all_vars = set()
         self.loop_vars = set()
 
@@ -544,6 +558,7 @@ class TemplateLight:
         code.add_line("return ''.join(result)")
         code.dedent()
 
+        self._code = code
         self._render_function = code.get_globals()['render_function']
 
 
@@ -928,6 +943,32 @@ class Bicchiere(BicchiereMiddleware):
     @staticmethod
     def get_template_fullpath(template_file):
         return os.path.join(Bicchiere.get_template_dir(), template_file)
+
+    @staticmethod
+    def compile_template(tpl_str = TemplateLight.test_tpl, **kw):
+        if not tpl_str:
+            return None
+        words = tpl_str.split()
+        if len(words) == 1:
+            fullpath = Bicchiere.get_template_fullpath(tpl_str)
+            if os.path.exists(fullpath) and os.path.isfile(fullpath):
+                fp = open(fullpath)
+                tpl_str = fp.read()
+                fp.close()
+        return TemplateLight(tpl_str, **kw)
+
+    @staticmethod
+    def render_template(tpl_str = TemplateLight.test_tpl, **kw):
+        if tpl_str.__class__.__name__ == "TemplateLight":
+            return tpl_str.render(**kw)
+        elif tpl_str.__class__.__name__ == "str":
+            compiled = Bicchiere.compile_template(tpl_str, **kw)
+            if compiled:
+                return compiled.render(**kw)
+            else:
+                return None
+        else:
+            return None
 
     ### End of template related stuff
 
