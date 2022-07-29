@@ -949,7 +949,22 @@ class Bicchiere(BicchiereMiddleware):
         ftpl = StringIO(tpl_str)
         lines = ftpl.readlines()
         ftpl.close()
-
+        for index, line in enumerate(lines):
+            stripline = line.strip()
+            m = re.match(r"\{#\s+include\s+(?P<inc_file>\w+?)\b.*\}", stripline)
+            if m:
+                inc_file = m.group_dict().get("inc_file")
+                if not inc_file:
+                    raise TemplateSyntaxError("include directiva must refer to a file")
+                full_path = Bicchiere.get_template_fullpath(inc_file.replace("\"", "").replace("'", ""))
+                if os.path.exists(fullpath) and os.path.isfile(fullpath):
+                    fp = open(fullpath)
+                    new_tpl_str = fp.read()
+                    fp.close()
+                    replace_line = Bicchiere.preprocess_template(new_tpl_str, **kw)
+                    lines[index] = replace_line
+                else:
+                    raise TemplateSyntaxError("Included file {0} in line {1} does not exist.".format(inc_file, index))
         return "".join(lines)
 
     @staticmethod
