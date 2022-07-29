@@ -951,7 +951,7 @@ class Bicchiere(BicchiereMiddleware):
         ftpl.close()
         for index, line in enumerate(lines):
             stripline = line.strip()
-            m = re.match(r"\{#\s+include\s+(?P<inc_file>\w+?)\b.*\}", stripline)
+            m = re.match(r"\{\#\s+include\s+(?P<inc_file>[a-zA-Z0-9.\"\']+)\s+\#\}", stripline)
             if m:
                 inc_file = m.group_dict().get("inc_file")
                 if not inc_file:
