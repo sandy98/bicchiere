@@ -400,7 +400,7 @@ class Route:
 
 ### End of support classes
 
-### Templates related classes
+### Templates related code
 
 class CodeBuilder:
     """Build source code conveniently."""
@@ -615,7 +615,7 @@ class TemplateLight:
             render_context.update(context)
         return self._render_function(render_context, self._do_dots)
 
-### End of templates related classes
+### End of templates related code
 
 
 ### Middleware
