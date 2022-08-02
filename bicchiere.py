@@ -615,6 +615,20 @@ class TemplateLight:
             render_context.update(context)
         return self._render_function(render_context, self._do_dots)
 
+body_style = """
+<style>
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+</style>
+"""
+menu_style = """
+
+"""
+
+class MenuBuilder:
+
+
 ### End of templates related code
 
 
