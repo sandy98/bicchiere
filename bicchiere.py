@@ -627,6 +627,22 @@ header_suffix_html = """
   </head>
 """
 
+body_prefix_html = """
+  <div class="navbar">
+    {{ menu_content }}
+  </div>
+  <div class="container" id="main-container">
+"""
+
+body_suffix_html = """
+      </div>
+    </body>
+  </html>
+"""
+
+
+
+
 font_awesome_style = """
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 """
@@ -702,6 +718,7 @@ menu_style = """
 """
 
 class MenuBuilder:
+    pass
 
 
 ### End of templates related code
