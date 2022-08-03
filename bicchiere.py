@@ -716,8 +716,66 @@ menu_style = """
   </style>
 """
 
+class MenuItem:
+
+    def __init__(self, title, link):
+        self.title = title
+        self.link = link
+
+    def __repr__(self):
+        return '<a href="{0}">{1}</a>'.format(self.link, self.title)
+
+
+class DropdownMenu:
+
+    def __init__(self, title = "Dropdown"):
+        self.title = title
+        self.__items = list()
+
+    def addItem(self, item: MenuItem):
+        if not isinstance(item, MenuItem):
+            return False
+        else:
+            self.__items.append(item)
+            return True
+
+    def __repr__(self):
+        parts = []
+        prefix = f"""
+        <div class="dropdown">
+            <button class="dropbtn">{self.title}
+            <i class="fa fa-caret-down"></i>
+            </button>
+            <div class="dropdown-content">
+        """
+        parts.append(prefix)
+        for i in self.__items:
+            parts.append(str(i))
+        suffix = """
+            </div>
+        </div>
+        """
+        parts.append(suffix)
+        return "".join(parts)
+
+
 class MenuBuilder:
-    pass
+
+    def __init__(self):
+        self.__items = []
+
+    def addItem(self, item: MenuItem):
+        if (not isinstance(item, MenuItem)) and (not isinstance(item, DropdownMenu)):
+            return False
+        else:
+            self.__items.append(item)
+            return True
+
+    def __repr__(self):
+        parts = []
+        for i in self.__items:
+            parts.append(str(i))
+        return "".join(parts)
 
 
 ### End of templates related code
