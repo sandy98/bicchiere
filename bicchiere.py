@@ -777,18 +777,18 @@ page_template = chr(10).join([
 
 class MenuItem:
 
-    def __init__(self, title, link):
-        self.title = title
+    def __init__(self, label, link):
+        self.label = label
         self.link = link
 
     def __repr__(self):
-        return '<a href="{0}">{1}</a>'.format(self.link, self.title)
+        return '<a href="{0}">{1}</a>'.format(self.link, self.label)
 
 
 class DropdownMenu:
 
-    def __init__(self, title = "Dropdown"):
-        self.title = title
+    def __init__(self, label = "Dropdown"):
+        self.label = label
         self.__items = list()
 
     def addItem(self, item: MenuItem):
@@ -802,7 +802,7 @@ class DropdownMenu:
         parts = []
         prefix = f"""
         <div class="dropdown">
-            <button class="dropbtn">{self.title}
+            <button class="dropbtn">{self.label}
             <i class="fa fa-caret-down"></i>
             </button>
             <div class="dropdown-content">
