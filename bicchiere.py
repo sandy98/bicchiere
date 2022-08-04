@@ -775,6 +775,18 @@ page_template = chr(10).join([
     body_suffix_html
 ])
 
+page_template_with_bulma = chr(10).join([
+    header_prefix_html,
+    body_style,
+    fontawesome_style,
+    bulma_style,
+    menu_style,
+    header_suffix_html,
+    body_prefix_html,
+    "{{ main_contents }}",
+    body_suffix_html
+])
+
 class MenuItem:
 
     def __init__(self, label, link):
