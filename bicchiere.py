@@ -629,6 +629,7 @@ header_suffix_html = """
 """
 
 body_prefix_html = """
+<body>
   <div class="navbar">
     {{ menu_content }}
   </div>
@@ -762,7 +763,16 @@ menu_style = """
   </style>
 """
 
-
+page_template = chr(10).join([
+    header_prefix_html,
+    body_style,
+    fontawesome_style,
+    menu_style,
+    header_suffix_html,
+    body_prefix_html,
+    "{{ main_contents }}",
+    body_suffix_html
+])
 
 class MenuItem:
 
