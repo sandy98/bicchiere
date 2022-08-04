@@ -615,6 +615,7 @@ class TemplateLight:
             render_context.update(context)
         return self._render_function(render_context, self._do_dots)
 
+
 header_prefix_html = """
 <!DOCTYPE html>
   <html>
@@ -635,13 +636,58 @@ body_prefix_html = """
 """
 
 body_suffix_html = """
+    <script type="text/javascript">
+        // script to handle clicks on notifications
+        document.addEventListener('DOMContentLoaded', function() {
+	    // console.log("DOMContentLoaded");
+
+	    (document.querySelectorAll('.notification .delete') || []).forEach(function($delete) {
+    	        var $notification = $delete.parentNode;
+		$delete.addEventListener('click', function() {
+      		   $notification.parentNode.removeChild($notification);
+    		});
+  	    });
+
+          // Get all "navbar-burger" elements
+          var $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
+          //console.log("Processing click handlers for " + $navbarBurgers.length + " burgers.");
+          // Check if there are any navbar burgers
+          if ($navbarBurgers.length > 0) {
+            // Add a click event on each of them
+            $navbarBurgers.forEach( function(el) {
+              el.addEventListener('click', function() {
+                // Get the target from the "data-target" attribute
+                //console.log("el: " + el.innerHTML);
+		//console.log("el.dataset: " + el.dataset);
+                var target = el.dataset.target;
+                //console.log("target: " + target);
+                var $target = document.getElementById(target);
+                //console.log("$target: " + $target);
+		// Toggle the "is-active has-text-link" class on both the "navbar-burger" and the "navbar-menu"
+                el.classList.toggle('is-active');
+                el.classList.toggle('has-text-link');
+                $target.classList.toggle('is-active');
+                $target.classList.toggle('has-text-link');
+                //console.log("el.classList: " + el.classList);
+                //console.log("$target.classList: " + $target.classList);
+                //console.log('Click sobre el burger!');
+              });
+            });
+          }
+       });
+    </script>
+
       </div>
     </body>
   </html>
 """
 
-font_awesome_style = """
+fontawesome_style = """
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+"""
+
+bulma_style = """
+ <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.1/css/bulma.min.css">
 """
 
 body_style = """
@@ -715,6 +761,8 @@ menu_style = """
   }
   </style>
 """
+
+
 
 class MenuItem:
 
