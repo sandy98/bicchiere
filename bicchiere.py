@@ -763,6 +763,7 @@ menu_style = """
   </style>
 """
 
+#Page template includes 3 placeholders: 'page_title', 'menu_contnet' and 'main_contents'
 page_template = chr(10).join([
     header_prefix_html,
     body_style,
