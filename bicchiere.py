@@ -836,7 +836,7 @@ class MenuBuilder:
         self.__items = []
 
     def addItem(self, item: MenuItem):
-        if (not isinstance(item, MenuItem)) and (not isinstance(item, DropdownMenu)):
+        if not isinstance(item, (MenuItem, DropdownMenu)):
             return False
         else:
             self.__items.append(item)
@@ -919,6 +919,8 @@ class Bicchiere(BicchiereMiddleware):
     __version__ = (0, 1, 1)
 
     config = default_config
+
+    template_filters = {}
 
     known_servers = ['gunicorn', 'bjoern', 'wsgiref']
     bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"]
@@ -1023,6 +1025,12 @@ class Bicchiere(BicchiereMiddleware):
 
     def __init__(self, name = None, **kwargs):
         "Prepares Bicchiere instance to run"
+
+        # Register some common template filter functions
+        Bicchiere.register_template_filter("title", str.title)
+        Bicchiere.register_template_filter("capitalize", str.capitalize)
+        Bicchiere.register_template_filter("upper", str.upper)
+        Bicchiere.register_template_filter("lower", str.lower)
 
         # First, things that don't vary through calls
         self.name = name if name else random.choice(Bicchiere.bevande)
@@ -1179,7 +1187,7 @@ class Bicchiere(BicchiereMiddleware):
         return os.path.join(Bicchiere.get_template_dir(), template_file)
 
     @staticmethod
-    def preprocess_template(tpl_str = TemplateLight.test_tpl, **kw):
+    def preprocess_template(tpl_str = TemplateLight.test_tpl):
         ftpl = StringIO(tpl_str)
         lines = ftpl.readlines()
         ftpl.close()
@@ -1190,19 +1198,19 @@ class Bicchiere(BicchiereMiddleware):
                 inc_file = m.group_dict().get("inc_file")
                 if not inc_file:
                     raise TemplateSyntaxError("include directiva must refer to a file")
-                full_path = Bicchiere.get_template_fullpath(inc_file.replace("\"", "").replace("'", ""))
+                fullpath = Bicchiere.get_template_fullpath(inc_file.replace("\"", "").replace("'", ""))
                 if os.path.exists(fullpath) and os.path.isfile(fullpath):
                     fp = open(fullpath)
                     new_tpl_str = fp.read()
                     fp.close()
-                    replace_line = Bicchiere.preprocess_template(new_tpl_str, **kw)
+                    replace_line = Bicchiere.preprocess_template(new_tpl_str)
                     lines[index] = replace_line
                 else:
                     raise TemplateSyntaxError("Included file {0} in line {1} does not exist.".format(inc_file, index))
         return "".join(lines)
 
     @staticmethod
-    def compile_template(tpl_str = TemplateLight.test_tpl, **kw):
+    def compile_template(tpl_str = TemplateLight.test_tpl):
         if not tpl_str:
             return None
         words = tpl_str.split()
@@ -1212,14 +1220,14 @@ class Bicchiere(BicchiereMiddleware):
                 fp = open(fullpath)
                 tpl_str = fp.read()
                 fp.close()
-        return TemplateLight(Bicchiere.preprocess_template(tpl_str), **kw)
+        return TemplateLight(Bicchiere.preprocess_template(tpl_str), **Bicchiere.template_filters)
 
     @staticmethod
     def render_template(tpl_str = TemplateLight.test_tpl, **kw):
         if tpl_str.__class__.__name__ == "TemplateLight":
             return tpl_str.render(**kw)
         elif tpl_str.__class__.__name__ == "str":
-            compiled = Bicchiere.compile_template(tpl_str, **kw)
+            compiled = Bicchiere.compile_template(tpl_str)
             if compiled:
                 return compiled.render(**kw)
             else:
@@ -1946,6 +1954,22 @@ class Bicchiere(BicchiereMiddleware):
        #self.debug(f"Yielding final response from Bicchiere default_handler: {final_response[ : 30]} ...")
        #self.start_response("200 OK", self.headers.items())
        return final_response
+
+    @classmethod
+    def register_template_filter(cls, filter_name: str, filter_func):
+        if (not isinstance(filter_name, str)) or (filter_func.__class__.__name__ != "function"):
+            return False
+        else:
+            cls.template_filters[filter_name] = filter_func
+            return True
+
+    @classmethod
+    def unregister_template_filter(cls, filter_name: str):
+        if filter_name in cls.template_filters:
+            del cls.template_filters[filter_name]
+            return True
+        else:
+            return False
 
     @classmethod
     def demo_app(cls):
