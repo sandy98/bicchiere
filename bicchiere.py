@@ -1957,7 +1957,7 @@ class Bicchiere(BicchiereMiddleware):
 
     @classmethod
     def register_template_filter(cls, filter_name: str, filter_func):
-        if (not isinstance(filter_name, str)) or (filter_func.__class__.__name__ != "function"):
+        if (not isinstance(filter_name, str)): #or (filter_func.__class__.__name__ != "function"):
             return False
         else:
             cls.template_filters[filter_name] = filter_func
