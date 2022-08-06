@@ -1741,9 +1741,11 @@ class Bicchiere(BicchiereMiddleware):
                         color: steelblue;
                         font-weight: bold;
                     }
+                    
                     a:hover {
-                        color: blue;
+                        color: navy;
                     }
+                    
                     .steelblue {
                         color: steelblue;
                     }
@@ -1974,7 +1976,6 @@ class Bicchiere(BicchiereMiddleware):
     @classmethod
     def demo_app(cls):
         bevanda = random.choice(Bicchiere.bevande)
-        #bevanda = ''
 
         #Bicchiere.config['session_manager_class'] = SessionManager
         #Bicchiere.config['session_manager_class'] = FileSessionManager
@@ -1982,9 +1983,60 @@ class Bicchiere(BicchiereMiddleware):
 
         app = cls(f"Demo {bevanda} App")
 
-        prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
-                demo_css = Bicchiere.get_demo_css())
-        suffix = Bicchiere.get_demo_suffix()
+        #prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
+        #        demo_css = Bicchiere.get_demo_css())
+        #suffix = Bicchiere.get_demo_suffix()
+
+        #Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
+        demo_page_template = chr(10).join([
+            header_prefix_html,
+            body_style,
+            fontawesome_style,
+            menu_style,
+            """
+              <style>
+                {}
+              </style>
+            """.format(Bicchiere.get_demo_css()),
+            header_suffix_html,
+            body_prefix_html,
+            "{{ main_contents }}",
+            body_suffix_html
+        ])
+
+        menu = MenuBuilder()
+
+        menu.addItem(MenuItem("Home", "/"))
+        
+        dropdown = DropdownMenu("Miscelaneous")
+        dropdown.addItem(MenuItem("Hello Page", "/hello"))
+        dropdown.addItem(MenuItem("HTTP and WSGI variables", "/environ"))
+        dropdown.addItem(MenuItem("Upload example", "/upload"))
+        dropdown.addItem(MenuItem("Favicon - Text Mode", "/favicon.ico"))
+        dropdown.addItem(MenuItem("Favicon - Image", "/img/favicon.ico"))
+        menu.addItem(dropdown)
+        
+        dropdown = DropdownMenu("Session variables and cookies")
+        dropdown.addItem(MenuItem("Session variables", "/showsession"))
+        dropdown.addItem(MenuItem("Cookies", "/showcookies"))
+        menu.addItem(dropdown)
+        
+        dropdown = DropdownMenu("Redirection Examples")
+        dropdown.addItem(MenuItem("Factorial of 42", "/f42"))
+        dropdown.addItem(MenuItem("The origin of everything: Python!", "/python"))
+        dropdown.addItem(MenuItem("Python per noi...", "/python_it"))
+        dropdown.addItem(MenuItem("WSGI (Web Server Gateway Interface, the tech behind Bicchiere) Wikipedia page", "/wsgiwiki"))
+        dropdown.addItem(MenuItem("WSGI Python secret web weapon (Part I)", "/wsgisecret"))
+        dropdown.addItem(MenuItem("WSGI Python secret web weapon (Part II)", "/wsgisecret2"))
+        menu.addItem(dropdown)
+
+        dropdown = DropdownMenu("Static Content Example")
+        dropdown.addItem(MenuItem("Show '/static' directory", "/showstatic"))
+        menu.addItem(dropdown)
+
+        menu.addItem(MenuItem("About", "/about"))
+
+
 
         @app.get('/')
         @app.html_content()
@@ -1995,17 +2047,37 @@ class Bicchiere(BicchiereMiddleware):
            contents = '''<h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>'''
            contents = contents.format(randomcolor, bevanda)
            info = Bicchiere.get_demo_content().format(heading =  heading, contents = contents)
-           return "{}{}{}".format(prefix, info, suffix)
-
+           #return "{}{}{}".format(prefix, info, suffix)
+           #Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
+           return Bicchiere.render_template(demo_page_template, 
+           page_title = "Demo Bicchiere App - Home",
+           menu_content = str(menu), 
+           main_contents = info)
+           
         @app.get('/favicon.ico')
         @app.html_content()
         def favicon():
-            return Bicchiere.get_favicon()
+            info = f"""
+            <p>{Bicchiere.get_favicon()}</p>
+            <p><a href="/">Home</a></p>
+            """
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Favicon source",
+            menu_content = str(menu), 
+            main_contents = info)
+           
 
         @app.get('/img/favicon.ico')
         @app.html_content()
-        def imgfavicon():
-            return Bicchiere.get_img_favicon()
+        def favicon_img():
+            info = f"""
+            <p>{Bicchiere.get_img_favicon()}</p>
+            <p><a href="/">Home</a></p>
+            """
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Favicon source",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app.route("/upload", methods = ['GET', 'POST'])
         def upload():
@@ -2064,8 +2136,12 @@ class Bicchiere(BicchiereMiddleware):
 
             heading =  "Upload Example"
             info = Bicchiere.get_demo_content().format(heading =  heading, contents = pinfo)
-            return "{}{}{}".format(prefix, info, suffix)
-
+#            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Upload example",
+            menu_content = str(menu), 
+            main_contents = info)
+           
         @app.get("/hello")
         @app.get("/hello/<who>")
         @app.html_content()
@@ -2075,7 +2151,10 @@ class Bicchiere(BicchiereMiddleware):
             #heading = f"Benvenuto, {Bicchiere.group_capitalize(who)}!!!"
             heading = f"Benvenuto, {who.title()}!!!"
             info = Bicchiere.get_demo_content().format(heading =  heading, contents = "")
-            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Hello Page",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app.get("/showstatic")
         def showstatic():
@@ -2086,7 +2165,10 @@ class Bicchiere(BicchiereMiddleware):
                 </div>
                       '''
             info = Bicchiere.get_demo_content().format(heading =  heading, contents = contents)
-            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Contents of static directory",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app._any("/factorial")
         @app._any("/factorial/<int:number>")
@@ -2103,11 +2185,19 @@ class Bicchiere(BicchiereMiddleware):
             result = reduce(lambda a, b: a * b, range(1, n + 1))
             pinfo = f'<div class="wrapped">El factorial de {n} es <br/>&nbsp;<br/>{result}</div>'
             info = Bicchiere.get_demo_content().format(heading =  "Factorials", contents = pinfo)
-            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Factorial",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app._any('/environ')
         def env():
-            return ''.join([x for x in app.default_handler()])
+            contents = ''.join([x for x in app.default_handler()])
+            info = Bicchiere.get_demo_content().format(heading =  "", contents = contents)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Environment vars",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app.get("/f42")
         def f42():
@@ -2168,7 +2258,10 @@ class Bicchiere(BicchiereMiddleware):
                 </div>
             '''
             info = Bicchiere.get_demo_content().format(heading =  "Cookies", contents = contents)
-            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Cookies",
+            menu_content = str(menu), 
+            main_contents = info)
 
         @app.route("/showsession", methods = ["GET", "POST"])
         @app.html_content()
@@ -2201,7 +2294,41 @@ class Bicchiere(BicchiereMiddleware):
             '''
             contents += "</div>"
             info = Bicchiere.get_demo_content().format(heading =  "Session Data", contents = contents)
-            return "{}{}{}".format(prefix, info, suffix)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - Session vars",
+            menu_content = str(menu), 
+            main_contents = info)
+
+        @app.get("/about")
+        def about():
+            contents="""
+            Lorem ipsum dolor sit amet consectetur adipisicing elit. Maxime mollitia,
+            molestiae quas vel sint commodi repudiandae consequuntur voluptatum laborum
+            numquam blanditiis harum quisquam eius sed odit fugiat iusto fuga praesentium
+            optio, eaque rerum! Provident similique accusantium nemo autem. Veritatis
+            obcaecati tenetur iure eius earum ut molestias architecto voluptate aliquam
+            nihil, eveniet aliquid culpa officia aut! Impedit sit sunt quaerat, odit,
+            tenetur error, harum nesciunt ipsum debitis quas aliquid. Reprehenderit,
+            quia. Quo neque error repudiandae fuga? Ipsa laudantium molestias eos 
+            sapiente officiis modi at sunt excepturi expedita sint? Sed quibusdam
+            recusandae alias error harum maxime adipisci amet laborum. Perspiciatis 
+            minima nesciunt dolorem! Officiis iure rerum voluptates a cumque velit 
+            quibusdam sed amet tempora. Sit laborum ab, eius fugit doloribus tenetur 
+            fugiat, temporibus enim commodi iusto libero magni deleniti quod quam 
+            consequuntur! Commodi minima excepturi repudiandae velit hic maxime
+            doloremque. Quaerat provident commodi consectetur veniam similique ad 
+            earum omnis ipsum saepe, voluptas, hic voluptates pariatur est explicabo 
+            fugiat, dolorum eligendi quam cupiditate excepturi mollitia maiores labore 
+            suscipit quas? Nulla, placeat. Voluptatem quaerat non architecto ab laudantium
+            modi minima sunt esse temporibus sint culpa, recusandae aliquam numquam 
+            totam ratione voluptas quod exercitationem fuga. Possimus quis earum veniam 
+            quasi aliquam eligendi, placeat qui corporis!
+            """
+            info = Bicchiere.get_demo_content().format(heading =  "The proverbial about page", contents = contents)
+            return Bicchiere.render_template(demo_page_template, 
+            page_title = "Demo Bicchiere App - About page",
+            menu_content = str(menu), 
+            main_contents = info)
 
         return app
 
