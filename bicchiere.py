@@ -2041,7 +2041,7 @@ class Bicchiere(BicchiereMiddleware):
         @app.get('/')
         @app.html_content()
         def home():
-           randomcolor = random.choice(['red','blue','green', 'steelblue', 'navy', 'brown', '#990000'])
+           randomcolor = random.choice(['red','blue','green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
            #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
            heading =  "WSGI, Bicchiere Flavor"
            contents = '''<h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>'''
