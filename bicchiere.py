@@ -916,7 +916,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 1, 1)
+    __version__ = (0, 1, 2)
 
     config = default_config
 
