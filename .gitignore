@@ -4,3 +4,17 @@ bicchiere_sessions.sqlite
 __pycache__/
 old*
 .gitattributes
+
+*.pyc
+*.pyo
+*.db
+*.log
+*.mo
+._*
+*.*~
+
+dist/
+build/
+MANIFEST
+bicchiere.egg-info/
+
