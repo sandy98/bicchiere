@@ -30,5 +30,5 @@ if __name__ == "__main__":
     app.run()
 ```
 
-... and this is just about the classical WSGI **Hello, World**, but there's more to come...
+... and this is just about the classical WSGI **Hello, World** but there's more to come...
 
