@@ -20,12 +20,12 @@ keywords = ["web", "wsgi", "app", "middleware", "server", "session", "templates"
 dependencies = []
 requires-python = ">=3.6"
 
-#[project.optional-dependencies]
-#dev = ["bjoern", "gunicorn", "cherrypy", "uwsgi"]
+# [project.optional-dependencies]
+# dev = ["bjoern", "gunicorn", "cherrypy", "uwsgi"]
 
 [project.urls]
 Homepage = "https://github.com/sandy98/bicchiere"
 Demo_Site = "https://bicchiere.eu.pythonanywhere.com"
 
-#[project.scripts]
-#realpython = "reader.__main__:main"
+# [project.scripts]
+# realpython = "reader.__main__:main"
