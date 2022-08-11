@@ -2,17 +2,20 @@
 <h1 align="center">Bicchiere</h1>
 
 
-<p align="center"><img title="Un bel bicchiere di Campari" src="static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
+<p align="center"><img title="Un bel bicchiere di Campari" src="https://bicchiere.eu.pythonanywhere.com/static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
 
 ## Yet another python web (WSGI) micro-framework
 
 Following [Flask](https://flask.palletsprojects.com/en/2.1.x/) and [Bottle](https://bottlepy.org/docs/dev/) footsteps, adding a bit of italian flavor :-)
 
-This is a work in progress at a very initial stage, so it won't be available to install through Python official repository ([PyPI](https://pypi.org/)) for a while.
-
-So, as of now, only available means of installing/using it is through git clone, or just raw downloading bicchiere.py as Bicchiere follows the footsteps of Bottle.py in the sense of being a single file framework.
+## Install  
+```bash
+pip install bicchiere
+```
 
 ## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
+
+Current version: 0.1.5
 
 ## A drop from Bicchiere
 

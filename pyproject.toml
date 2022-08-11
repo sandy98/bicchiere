@@ -1,0 +1,31 @@
+ #pyproject.toml
+
+[build-system]
+requires      = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bicchiere"
+version = "0.1.5"
+description = "Yet another python web (WSGI) micro-framework"
+readme = "README.md"
+authors = [{ name = "Domingo E Savoretti", email = "esavoretti@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["web", "wsgi", "app", "middleware", "server", "session", "templates"]
+dependencies = []
+requires-python = ">=3.6"
+
+# [project.optional-dependencies]
+# dev = ["bjoern", "gunicorn", "cherrypy", "uwsgi"]
+
+[project.urls]
+Homepage = "https://github.com/sandy98/bicchiere"
+Demo_Site = "https://bicchiere.eu.pythonanywhere.com"
+
+# [project.scripts]
+# realpython = "reader.__main__:main"
