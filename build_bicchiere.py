@@ -38,7 +38,7 @@ def main():
     time.sleep(1)   
     print("Updating bicchiere version.")
     os.system(f"sed -i 's/Current version: {oversion}/Current version: {version}/' README.md")
-    os.system(f"sed -i 's/__version__ = \({omajor}, {ominor}, {orevision}\)/__version__ = \({major}, {minor}, {revision}\)/' bicchiere.py")
+    os.system(f"sed -i 's/{omajor}, {ominor}, {orevision}/{major}, {minor}, {revision}/' bicchiere.py")
     os.system(f"sed -i 's/version = \"{oversion}\"/version = \"{version}\"/' pyproject.toml")
     
     time.sleep(1)   

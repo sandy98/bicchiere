@@ -916,7 +916,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 1, 5)
+    __version__ = (0, 1, 6)
 
     __author__  = "Domingo E. Savoretti"
 
