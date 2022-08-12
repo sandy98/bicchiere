@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]   
 name = "bicchiere"
-version = "0.1.7"
+version = "0.1.8"
 description = "Yet another python web (WSGI) micro-framework"
 readme = "README.md"
 authors = [{ name = "Domingo E Savoretti", email = "esavoretti@gmail.com" }]
@@ -25,7 +25,8 @@ requires-python = ">=3.6"
 
 [project.urls]
 Homepage = "https://github.com/sandy98/bicchiere"
-Demo_Site = "https://bicchiere.eu.pythonanywhere.com"
+Wiki = "https://github.com/sandy98/bicchiere/wiki"
+Demo Site = "https://bicchiere.eu.pythonanywhere.com"
 
 # [project.scripts]
 # realpython = "reader.__main__:main"

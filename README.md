@@ -15,7 +15,7 @@ pip install bicchiere
 
 ## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
 
-Current version: 0.1.7
+Current version: 0.1.8
 
 ## A drop from Bicchiere
 
@@ -33,5 +33,5 @@ if __name__ == "__main__":
     app.run()
 ```
 
-... and this is just about the classical WSGI **Hello, World** but there's more to come...
+... and this is just about the classical WSGI **Hello, World**, for everything else please refer to [Bicchiere Wiki(https://github.com/sandy98/bicchiere/wiki)]
 
