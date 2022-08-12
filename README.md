@@ -15,7 +15,7 @@ pip install bicchiere
 
 ## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
 
-Current version: 0.2.0
+Current version: 0.2.1
 
 ## A drop from Bicchiere
 
@@ -26,7 +26,7 @@ app = Bicchiere(__name__)
 
 @app.get("/")
 def home():
-    return "Bon giorno, bebiamo un bon bicchiere?"
+    return "Bon giorno, cosa bevete oggi?"
     
 if __name__ == "__main__":
     #This will run default server on http://localhost:8086

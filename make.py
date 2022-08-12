@@ -9,6 +9,8 @@ def usage():
     return -1
 
 def main():
+    os.system("clear")
+    
     args = os.sys.argv[1:]
     if len(args) != 3:
         return usage()
