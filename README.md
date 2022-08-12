@@ -33,5 +33,5 @@ if __name__ == "__main__":
     app.run()
 ```
 
-... and this is just about the classical WSGI **Hello, World**, for everything else please refer to [Bicchiere Wiki(https://github.com/sandy98/bicchiere/wiki)]
+... and this is just about the classical WSGI **Hello, World**, for everything else please refer to [Bicchiere Wiki](https://github.com/sandy98/bicchiere/wiki)
 
