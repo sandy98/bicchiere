@@ -10,10 +10,10 @@ def usage():
 
 def main():
     os.system("clear")
-    
+
     args = os.sys.argv[1:]
     if len(args) != 3:
-        return usage()
+        return usage()              
     major, minor, revision = args
     print(f"Attemping to build bicchiere version: {major}.{minor}.{revision}")
 
