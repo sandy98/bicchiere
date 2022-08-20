@@ -3,11 +3,27 @@
 from uuid import uuid4
 import json
 import os
+import hmac, hashlib
 
 class Session(dict):
-    def __init__(self, sid = uuid4().hex, **kw):
-        self.sid = sid
+    """Session handling class"""
+
+    @staticmethod
+    def encrypt(secret, text = uuid4().hex):
+        hmac2 = hmac.new(key = text.encode(), digestmod = hashlib.sha256)
+        hmac2.update(bytes(secret, encoding = "utf-8"))
+        return hmac2.hexdigest()
+
+    def __init__(self, secret = "20181209" , **kw):
         self.update(**kw)
+        self.set_secret(secret)
+
+    def set_secret(self, secret):
+        self._secret = secret
+        self.set_sid()
+
+    def set_sid(self):
+        self.sid = Session.encrypt(secret = self._secret)
         self.save()
 
     def __getattr__(self, __name: str):
@@ -28,7 +44,11 @@ class Session(dict):
         return self.save()
 
     def __setattr__(self, __name: str, __value) -> str:
-        return self.__setitem__(__name, __value)
+        if __name.startswith('_') is False:
+            return self.__setitem__(__name, __value)  
+        else:
+            super().__setattr__(__name, __value)
+            return ""
 
     def __delattr__(self, __name: str) -> str:
         if self.get(__name):
@@ -45,18 +65,22 @@ class Session(dict):
             return ""
 
     def save(self) -> str:
-        d = dict()
-        d[self.sid] = self
-        j = json.dumps(d)
+        #d = dict()
+        #d[self.sid] = self
+        #j = json.dumps(d)
         #print(f"Saving {d}")
-        return j
+        return json.dumps(self)
 
     def load(self) -> str:
         return self.sid
 
     def get_store_dir(self) -> str:
-        #return os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
-        return os.path.join(os.getcwd(), 'bicchiere_sessions')
+        #store_dir = os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
+        store_dir = os.path.join(os.getcwd(), 'bicchiere_sessions')
+        if os.path.exists(store_dir) is False:
+            os.mkdir(store_dir)
+        return store_dir
 
+        
 
     
