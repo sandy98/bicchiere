@@ -23,17 +23,24 @@ class Session(dict):
         super().__setitem__(__k, __v)
         return self.save()
 
-    def __delitem__(self, __v) -> str:
-        super().__delitem__(__v)
+    def __delitem__(self, __k: str) -> str:
+        super().__delitem__(__k)
         return self.save()
 
     def __setattr__(self, __name: str, __value) -> str:
         return self.__setitem__(__name, __value)
 
     def __delattr__(self, __name: str) -> str:
-        #return super().__delattr__(__name)
         if self.get(__name):
             return self.__delitem__(__name)
+        else:
+            return ""
+
+    def pop(self, __name: str) -> str:
+        value = self.get(__name)
+        if value:
+            self.__delitem__(__name)
+            return value
         else:
             return ""
 
