@@ -43,4 +43,12 @@ class Session(dict):
         #print(f"Saving {d}")
         return j
 
+    def load(self) -> None:
+        pass
+
+    def get_store_dir(self) -> str:
+        #return os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
+        return os.path.join(os.getcwd(), 'bicchiere_sessions')
+
+
     
