@@ -2,6 +2,7 @@
 
 from uuid import uuid4
 import json
+import os
 
 class Session(dict):
     def __init__(self, sid = uuid4().hex, **kw):
@@ -41,3 +42,5 @@ class Session(dict):
         j = json.dumps(d)
         #print(f"Saving {d}")
         return j
+
+    
