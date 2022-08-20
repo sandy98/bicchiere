@@ -15,7 +15,7 @@ pip install bicchiere
 
 ## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
 
-Current version: 0.2.10
+Current version: 0.2.11
 
 ## A drop from Bicchiere
 

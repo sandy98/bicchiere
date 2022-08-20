@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+
 import os
 import time
 
@@ -9,12 +10,18 @@ def usage():
     return -1
 
 def main():
+    """
+    Auxiliary tool that updates version, builds packages, uploads them to Pypi and updates github repo.
+    """
+    
     os.system("clear")
 
     args = os.sys.argv[1:]
-    if len(args) != 3:
+    if len(args) < 3:
         return usage()              
-    major, minor, revision = args
+    major, minor, revision = args[:3]
+    commit_message = args[3] if len(args) > 3 else ""
+
     print(f"Attemping to build bicchiere version: {major}.{minor}.{revision}")
 
     from bicchiere import Bicchiere
@@ -72,7 +79,7 @@ def main():
     time.sleep(1)   
     print("Updating git.")
     os.system("git add .")
-    os.system(f"git commit -m'version {version}'")
+    os.system(f"git commit -m'version {version} {commit_message}'")
     os.system(f"git tag v{version}")
     os.system("git push")
 
