@@ -8,6 +8,7 @@ class Session(dict):
     def __init__(self, sid = uuid4().hex, **kw):
         self.sid = sid
         self.update(**kw)
+        self.save()
 
     def __getattr__(self, __name: str):
         if __name in self:
@@ -43,8 +44,8 @@ class Session(dict):
         #print(f"Saving {d}")
         return j
 
-    def load(self) -> None:
-        pass
+    def load(self) -> str:
+        return self.sid``
 
     def get_store_dir(self) -> str:
         #return os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
