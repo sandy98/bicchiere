@@ -17,22 +17,27 @@ class Session(dict):
     def __getattribute__(self, __name: str):
         return super().__getattribute__(__name)
 
-    def __setitem__(self, __k: str, __v) -> None:
+    def __setitem__(self, __k: str, __v) -> str:
         super().__setitem__(__k, __v)
-        self.save()
+        return self.save()
 
-    def __setattr__(self, __name: str, __value) -> None:
-        self.__setitem__(__name, __value)
+    def __delitem__(self, __v) -> str:
+        super().__delitem__(__v)
+        return self.save()
 
-    def __delattr__(self, __name: str) -> None:
+    def __setattr__(self, __name: str, __value) -> str:
+        return self.__setitem__(__name, __value)
+
+    def __delattr__(self, __name: str) -> str:
         #return super().__delattr__(__name)
         if self.get(__name):
-            del self[__name]
-            self.save()
+            return self.__delitem__(__name)
+        else:
+            return ""
 
     def save(self) -> str:
         d = dict()
         d[self.sid] = self
         j = json.dumps(d)
-        print(f"Saving {d}")
+        #print(f"Saving {d}")
         return j
