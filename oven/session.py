@@ -6,7 +6,7 @@ import os
 import hmac, hashlib
 
 class Session(dict):
-    """Session handling class"""
+    """Session handling base class"""
 
     @staticmethod
     def encrypt(secret, text = uuid4().hex):
