@@ -20,11 +20,11 @@ class Session(dict):
         return hmac2.hexdigest()
 
     def __init__(self, sid = None , **kw):
-        self.update(**kw)
         if sid:
             self.sid = sid
             self.load()
         else:
+            self.update(**kw)
             self.set_sid()
 
     def set_sid(self):
@@ -95,6 +95,7 @@ class Session(dict):
 
 
 class FileSession(Session):
+    """File system based session handler class"""
 
     def load(self) -> str:
         file = self.get_file()
@@ -102,8 +103,9 @@ class FileSession(Session):
             fp = open(file, "rt", encoding="utf-8")
             old_self = json.load(fp)
             fp.close()
-            self.update(old_self)
-        return self.save()            
+            for k in old_self:
+                self[k] = old_self[k]
+        return json.dumps(self)            
 
     def save(self) -> str:
         file = self.get_file()
@@ -130,7 +132,7 @@ def main():
     s["user"] = dict(name = "Domingo Ernesto Savoretti", username = "sandy", age = 68)
     print("\n", s, "\n")
 
-    s2 = FileSession('9a3163d6079203ca73584e8e6d68103d2e9065d430194f42321ac6481f13e589', foe = "Vic Cacarulo")
+    s2 = FileSession('9a3163d6079203ca73584e8e6d68103d2e9065d430194f42321ac6481f13e589', foe = "Flamengo")
 
     print("\n", s2, "\n")
 
