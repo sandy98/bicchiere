@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from email import charset
-import os, random, re, json, cgi, threading, base64, sqlite3
+import os, random, re, json, cgi, threading, base64, sqlite3, hmac, hashlib
 
+from email import charset
 from io import StringIO
 from datetime import datetime, timedelta
-from time import time
+from time import time, sleep
 import time as o_time
 from functools import reduce, wraps
 from http.cookies import SimpleCookie, Morsel
