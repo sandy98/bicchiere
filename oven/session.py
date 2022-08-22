@@ -21,12 +21,16 @@ class Session(dict):
 
     def __init__(self, sid = None , **kw):
         if sid:
+            if len(sid) < 32:
+                raise KeyError("Wrong SID format")
             self.sid = sid
             self.load()
         else:
-            self.update(**kw)
             self.set_sid()
-
+        if kw:
+            self.update(**kw)
+            self.save()
+            
     def set_sid(self):
         self.sid = self.encrypt()
         self.save()
