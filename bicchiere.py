@@ -794,7 +794,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 2, 12)
+    __version__ = (0, 3, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1893,7 +1893,7 @@ class Bicchiere(BicchiereMiddleware):
         bevanda = random.choice(Bicchiere.bevande)
 
         Bicchiere.config['session_class'] = FileSession
-    
+        FileSession.secret = "20181209"
         app = cls(f"Demo {bevanda} App")
 
         # prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
