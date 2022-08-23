@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, random, re, json, cgi, threading, base64, sqlite3, hmac, hashlib
+import os
+import random
+import re
+import json
+import cgi
+import threading
+import base64
+import sqlite3
+import hmac
+import hashlib
 
 from email import charset
 from io import StringIO
@@ -16,359 +25,13 @@ from uuid import uuid4
 from urllib.parse import parse_qsl
 from mimetypes import guess_type
 
-### Support classes
 
-class EventEmitter:
-    "Utility class for adding objects the ability to emit events and registering handlers. Meant to be used as a mixin."
-
-    def __init__(self, name = 'EventEmitter'):
-        self.name = name
-        self.event_handlers = {}
-
-    def __repr__(self):
-        return f"""
-                Name:           {self.name}
-                Handlers:       {self.event_handlers.items()}
-                """
-
-    def __str__(self):
-        return repr(self)
-
-    def emit(self, event_name = "change", event_data = {}):
-        if event_name not in self.event_handlers:
-            self.event_handlers[event_name] = []
-        for evh in self.event_handlers[event_name]:
-            evh(self, event_name, event_data)
-
-    def on(self, event_name, callback):
-        uid = uuid4().hex
-        callback.id = uid
-        if event_name not in self.event_handlers:
-            self.event_handlers[event_name] = []
-        self.event_handlers[event_name].append(callback)
-
-        def off_event():
-            i = 0
-            for evh in self.event_handlers[event_name]:
-                if evh.id == uid:
-                    self.event_handlers[event_name].pop(i)
-                    break
-                i += 1
-
-        off_event.id = uid
-
-        return off_event
-
-
-class EventedDict(dict, EventEmitter):
-    def __init__(self, name = "EventedDict", *args, **kwargs):
-        super(EventedDict, self).__init__(*args, **kwargs)
-        self.name = name
-        self.event_handlers = {}
-
-    def __del__(self):
-        #self.publish_change()
-        self.publish_terminate()
-
-    def __setitem__(self, key, value):
-        super(EventedDict, self).__setitem__(key, value)
-        self.publish_change(key, value)
-
-    def __delitem__(self, key):
-        super(EventedDict, self).__delitem__(key)
-        self.publish_change(key, None)
-
-    def __getattr__(self, key):
-        return super(EventedDict, self).get(key, None)
-
-    def publish_change(self, key = None, value = None):
-        print(f"{self.__class__.__name__} emitting change event with key: {key} = value: {value}")
-        self.emit("change", {'key': key, 'value': value, 'obj': self})
-
-    def publish_terminate(self):
-        print(f"{self.__class__.__name__} emitting terminate event")
-        self.emit("terminate", self)
-
-
-class Clock(EventEmitter):
-    def __init__(self, seconds = 0, name = "Clock"):
-       super(Clock, self).__init__(name)
-       self.seconds = seconds
-       self.interval = Bicchiere.config['session_saving_interval']
-       self.running = False
-       self.runner = None
-
-    @staticmethod
-    def pad(text, pad_len = 4, pad_char = '0', pad_left = True):
-        text = str(text)
-        padlen = pad_len - len(text)
-        padstring = ''
-        if padlen > 0:
-            padstring = pad_char * padlen
-        retstri = "{}{}"
-        if pad_left:
-            return retstri.format(padstring, text)
-        else:
-            return retstri.format(text, padstring)
-
-    @staticmethod
-    def run(this):
-        #print("Beggining threaded execution")
-        try:
-             while this.running:
-                this.emit("change", this.seconds)
-                o_time.sleep(this.interval)
-                this.seconds += this.interval
-        except Exception as exc:
-            print(f"Threaded execution interrupted due to: {str(exc)}")
-            this.running = False
-        finally:
-            return
-
-    def start(self):
-        if self.runner and self.runner.is_alive():
-            return
-        self.running = True
-        self.runner = threading.Thread(name = f"{self.name}-runner", target = self.run, args = (self,), daemon = True)
-        #self.runner = multiprocessing.Process(name = f"{self.name}-runner", target = self.run, args = (self,), daemon = True)
-        print("Starting clock...")
-        self.runner.start()
-
-    def stop(self):
-        print("Stopping clock...")
-        while self.runner and self.runner.is_alive():
-            self.running = False
-        self.child = None
-
-    def restart(self):
-        if self.running:
-            self.stop()
-        self.seconds = 0
-        self.start()
-
-    def gen_handler(self):
-        def evh(obj, evt, seconds):
-            print(f"{self.pad(seconds)} seconds ellapsed.")
-        return evh
-
-
-class Session(EventedDict):
-    def __init__(self, sid = None, name = None, *args, **kwargs):
-        super(Session, self).__init__(*args, **kwargs)
-        if sid and self.validate_sid(sid):
-            sid = sid
-        else:
-            sid = uuid4().hex
-        self.__setitem__('sid', sid)
-        self.name = name or f"sid-{sid}"
-
-    @staticmethod
-    def validate_sid(sid):
-        return not not re.match(r'[a-f0-9]{32}', sid)
-
-
-class EventHandler:
-    "Utility class for registering event handlers"
-
-    def __init__(self, name = 'EventHandler'):
-        self.name = name
-        self.handlers = []
-        self.unsuscribers = []
-
-    def __repr__(self):
-        return f"""
-                Name:           {self.name}
-                Handlers:       {list(map(lambda h: h.id, self.handlers))}
-                Total Handlers: {len(self.handlers)}
-                """
-
-    def __str__(self):
-        return repr(self)
-
-    def make_handler(self, cb, obj, evt):
-        if hasattr(obj, 'on') and hasattr(obj.on, '__call__'):
-            self.unsuscribers.append(obj.on(evt, cb))
-            self.handlers.append(cb)
-
-    def unsuscribe(self, index):
-        if index >= 0 and index < len(self.unsuscribers):
-            self.unsuscribers[index]()
-            f = self.unsuscribers.pop(index)
-            del f
-            f = self.handlers.pop(index)
-            del f
-
-    def unsuscribe_all(self):
-        for i in range(len(self.unsuscribers)):
-            self.unsuscribe(i)
-
-
-class SessionManager(EventHandler):
-    "Manages sessions on behalf of a Bicchiere App"
-
-    def __init__(self, name = 'SessionManager'):
-        #print(f"Starting {self.__class__.__name__}")
-        super(SessionManager, self).__init__(name)
-        self.sessions = {}
-        self.clock = Clock()
-        self.clock.on("change", self.handle_clock())
-        self.clock_started = False
-
-    def handle_clock(self):
-        def on_change(*args, **kwargs):
-            self.save_all()
-        return on_change
-
-    def start_clock(self):
-        if not self.clock_started:
-            self.clock.start()
-            self.clock_started = True
-
-    def __del__(self):
-        print(f"Stopping {self.__class__.__name__}")
-        self.save_all()
-
-    def manage_session(self, session):
-        print(f"{self.__class__.__name__}.manage_session preparing to handle session {session.sid}")
-        self.sessions[session.sid] = session
-        def handle_session_change(sess, evt, data):
-            self.save_session(sess)
-        self.make_handler(handle_session_change, session, "change")
-        self.make_handler(handle_session_change, session, "terminate")
-
-    def create_session(self, sid = None):
-        ssid = None
-        if not sid:
-            ssid = uuid4().hex
-        else:
-            if Session.validate_sid(sid):
-                ssid = sid
-                print(f"{self.__class__.__name__}.create_session found valid sid: {sid}")
-            else:
-                ssid = uuid4().hex
-                print(f"{self.__class__.__name__}.create_session found invalid sid: {sid}, thus returning a new one: {ssid}")
-        session = Session(ssid)
-        self.manage_session(session)
-        self.save_session(session)
-        return session
-
-    def get_session(self, sid):
-        if not self.clock_started:
-            self.start_clock()
-        if sid in self.sessions:
-            print(f"{self.__class__.__name__}.get_session returning existing session: {sid}")
-            return self.sessions[sid]
-        else:
-            print(f"{self.__class__.__name__}.get_session returning new session: {sid}")
-            return self.create_session(sid)
-
-    def load_session(self, sid):
-        return self.get_session(sid)
-
-    def save_session(self, session):
-        if not self.clock.seconds % (100 * self.clock.interval): # log it every 100 times
-            print(f"{self.__class__.__name__} saving session {session.sid} at {o_time.strftime('%d/%m/%Y %X')}")
-        self.sessions[session.sid] = session
-
-    def save_all(self):
-        try:
-            for sid in self.sessions:
-                self.save_session(self.sessions[sid])
-        except:
-            pass
-
-
-class FileSessionManager(SessionManager):
-    "Stores sessions in file system"
-
-    def __init__(self, name = 'FileSessionManager'):
-        super(FileSessionManager, self).__init__(name)
-        self.directory = os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
-        if not os.path.exists(self.directory):
-            os.mkdir(self.directory)
-
-    def load_session(self, sid):
-        session = None
-        filename = os.path.join(self.directory, sid)
-        if os.path.exists(filename):
-            fp = open(filename, "r")
-            session = Session(**json.load(fp))
-            fp.close()
-            self.sessions[sid] = session
-        return super(FileSessionManager, self).load_session(sid)
-
-    def save_session(self, session):
-        filename = os.path.join(self.directory, session.sid)
-        fp = open(filename, "w")
-        json.dump(session, fp)
-        fp.close()
-        super(FileSessionManager, self).save_session(session)
-
-
-class DbSessionManager(SessionManager):
-    "Stores sessions in SQLite database"
-
-    def __init__(self, name = 'DbSessionManager'):
-        super(DbSessionManager, self).__init__(name)
-        self.directory = os.path.join(os.getcwd(), Bicchiere.config['session_directory'])
-        if not os.path.exists(self.directory):
-            os.mkdir(self.directory)
-        self.dbfile = os.path.join(self.directory, f'{Bicchiere.config["session_directory"]}.sqlite')
-        self.conn, self.cursor = self.create_db_objects()
-        #try:
-        #    print(f"{self.__class__.__name__} testing table 'sessions' in \n{self.dbfile}")
-        #    self.cursor.execute("select count(sid) from sessions;");
-        #    self.cursor.fetchone()
-        #except sqlite3.OperationalError:
-        #    print("Table 'sessions' does not exist, creating it.")
-        #    self.cursor.execute("create table sessions(sid text, data text);")
-        try:
-            self.cursor.execute("CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY, data TEXT);")
-            self.conn.commit()
-            self.cursor.close()
-            self.conn.close()
-        except Exception as exc:
-             print(f"Error creating table 'sessions' due to: {str(exc)}\nQuitting...")
-             os.sys.exit(1)
-
-    def create_db_objects(self):
-        conn = sqlite3.connect(self.dbfile)
-        cursor = conn.cursor()
-        return conn, cursor
-
-    def sess_exists(self, sid):
-        self.cursor.execute("select count(*) from sessions where sid = ?;", (sid, ))
-        result = self.cursor.fetchone()[0]
-        return not not result
-
-    def load_session(self, sid):
-        session = None
-        self.conn, self.cursor = self.create_db_objects()
-        if self.sess_exists(sid):
-            self.cursor.execute("select * from sessions where sid = ?;", (sid, ))
-            session = Session(**json.loads(self.cursor.fetchone()[1]))
-            self.sessions[sid] = session
-        self.cursor.close()
-        self.conn.close()
-        return super(DbSessionManager, self).load_session(sid)
-
-    def save_session(self, session):
-        self.conn, self.cursor = self.create_db_objects()
-        if self.sess_exists(session.sid):
-            self.cursor.execute('update sessions set data = ? where sid = ?;', (json.dumps(session), session.sid))
-        else:
-            self.cursor.execute('insert into sessions (sid, data) values (?, ?);', (session.sid, json.dumps(session)))
-        self.conn.commit()
-        self.cursor.close()
-        self.conn.close()
-        self.sessions[session.sid] = session
-        super(DbSessionManager, self).save_session(session)
-
+# Routing classes
 
 class Route:
     "Utility class for routing requests"
 
-    def __init__(self, pattern, func, param_types, methods = ['GET']):
+    def __init__(self, pattern, func, param_types, methods=['GET']):
         self.pattern = pattern
         self.func = func
         self.param_types = param_types
@@ -386,7 +49,7 @@ class Route:
             for argname in kwargs:
                 self.args[argname] = self.param_types[argname](kwargs[argname])
             return self
-            #return m.groupdict(), self.func, self.methods, self.param_types
+            # return m.groupdict(), self.func, self.methods, self.param_types
         return None
 
     def __str__(self):
@@ -398,9 +61,9 @@ class Route:
                Arguments: {self.args}
                """
 
-### End of support classes
+# End of routing classes
 
-### Templates related code
+# Templates related code
 
 class CodeBuilder:
     """Build source code conveniently."""
@@ -445,8 +108,10 @@ class CodeBuilder:
         exec(python_source, global_namespace)
         return global_namespace
 
+
 class TemplateSyntaxError(BaseException):
     pass
+
 
 class TemplateLight:
 
@@ -468,8 +133,8 @@ class TemplateLight:
         These are good for filters and global values.
         """
         self.context = {}
-        #for context in contexts:
-            #self.context.update(context)
+        # for context in contexts:
+        # self.context.update(context)
         self.context.update(contexts)
         self.all_vars = set()
         self.loop_vars = set()
@@ -560,8 +225,6 @@ class TemplateLight:
 
         self._code = code
         self._render_function = code.get_globals()['render_function']
-
-
 
     def _variable(self, name, vars_set):
         """Track that `name` is used as a variable.
@@ -763,7 +426,7 @@ menu_style = """
   </style>
 """
 
-#Page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
+# Page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
 page_template = chr(10).join([
     header_prefix_html,
     body_style,
@@ -787,6 +450,7 @@ page_template_with_bulma = chr(10).join([
     body_suffix_html
 ])
 
+
 class MenuItem:
 
     def __init__(self, label, link):
@@ -799,7 +463,7 @@ class MenuItem:
 
 class DropdownMenu:
 
-    def __init__(self, label = "Dropdown"):
+    def __init__(self, label="Dropdown"):
         self.label = label
         self.__items = list()
 
@@ -849,13 +513,13 @@ class MenuBuilder:
         return "".join(parts)
 
 
-### End of templates related code
+# End of templates related code
 
 
-### Middleware
+# Middleware
 
 class BicchiereMiddleware:
-    def __init__(self, application = None):
+    def __init__(self, application=None):
         self.application = application
         self.name = self.__class__.__name__
 
@@ -868,7 +532,8 @@ class BicchiereMiddleware:
         if self.application:
             return self.application(environ, start_response)
         else:
-            start_response("200 OK", [('Content-Type', 'text/html; charset=utf-8')])
+            start_response(
+                "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
             yield str(self).encode("utf-8")
             return b""
 
@@ -877,7 +542,8 @@ class BicchiereMiddleware:
 
     @property
     def last_handler(self):
-        lh = self.application if hasattr(self, "application") and Bicchiere.is_callable(self.application) else self
+        lh = self.application if hasattr(
+            self, "application") and Bicchiere.is_callable(self.application) else self
 
         while hasattr(lh, "application") and Bicchiere.is_callable(lh.application):
             lh = lh.application
@@ -888,28 +554,240 @@ class BicchiereMiddleware:
         if self.application:
             return self.application.run(*args, **kwargs)
         else:
-           self.debug(f"{self.name} was meant as middleware, therefore it will not run stand alone")
+            self.debug(
+                f"{self.name} was meant as middleware, therefore it will not run stand alone")
 
 
-### End of middleware
+# End of middleware
+
+# Session handling support classes
 
 
-### Miscelaneous configuration options
+class Session(dict):
+    """Session handling base class"""
+
+    secret = None
+
+    @classmethod
+    def encrypt(cls, text=uuid4().hex):
+        if not cls.secret:
+            #raise ValueError(
+            #    "Encryption can't be performed because secret word hasn't been set")
+            cls.secret = uuid4().hex
+        hmac2 = hmac.new(key=text.encode(), digestmod=hashlib.sha256)
+        hmac2.update(bytes(cls.secret, encoding="utf-8"))
+        return hmac2.hexdigest()
+
+    def __init__(self, sid=None, **kw):
+        if sid:
+            if len(sid) < 32:
+                raise KeyError("Wrong SID format")
+            self.sid = sid
+            self.load()
+        else:
+            self.set_sid()
+        if kw:
+            self.update(**kw)
+            self.save()
+
+    def set_sid(self):
+        self.sid = self.encrypt()
+        self.save()
+
+    def load(self) -> str:
+        return self.sid
+
+    def save(self) -> str:
+        #d = dict()
+        #d[self.sid] = self
+        #j = json.dumps(d)
+        #print(f"Saving {d}")
+        return json.dumps(self)
+
+    def get_store_dir(self) -> str:
+        store_dir = os.path.join(os.getcwd(), Bicchiere.config['sessions_directory'])
+        if os.path.exists(store_dir) is False:
+            os.mkdir(store_dir)
+        return store_dir
+
+    def get_file(self):
+        if not self.sid:
+            return ""
+        return os.path.join(self.get_store_dir(), self.sid)
+
+    def pop(self, __name: str) -> str:
+        value = self.get(__name)
+        if value:
+            self.__delitem__(__name)
+            return value
+        else:
+            return ""
+
+    def __getattr__(self, __name: str):
+        if __name in self:
+            return self[__name]
+        else:
+            raise AttributeError(
+                f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
+
+    # def __getattribute__(self, __name: str):
+    #    return super().__getattribute__(__name)
+
+    def __setitem__(self, __k: str, __v) -> str:
+        super().__setitem__(__k, __v)
+        if __k == "sid":
+            return json.dumps(self)
+        return self.save()
+
+    def __delitem__(self, __k: str) -> str:
+        super().__delitem__(__k)
+        return self.save()
+
+    def __setattr__(self, __name: str, __value) -> str:
+        if __name.startswith('_') is False:
+            return self.__setitem__(__name, __value)
+        else:
+            super().__setattr__(__name, __value)
+            return ""
+
+    def __delattr__(self, __name: str) -> str:
+        if self.get(__name):
+            return self.__delitem__(__name)
+        else:
+            return ""
+
+
+class FileSession(Session):
+    """File system based session handler class"""
+
+    def load(self) -> str:
+        file = self.get_file()
+        if os.path.exists(file):
+            fp = open(file, "rt", encoding="utf-8")
+            old_self = json.load(fp)
+            #for k in self:
+            #    if not k == "sid":
+            #        del self[k] 
+            fp.close()
+            for k in old_self:
+                self[k] = old_self[k]
+        return json.dumps(self)
+
+    def save(self) -> str:
+        file = self.get_file()
+        fp = open(file, "wt", encoding="utf-8")
+        json.dump(self, fp)
+        fp.close()
+        return json.dumps(self)
+
+
+class SqliteSession(Session):
+    "Stores sessions in SQLite database"
+
+    def get_file(self):
+        return os.path.join(self.get_store_dir(), "bicchiere_sessions.sqlite")
+
+    def create_db(self):
+        file = self.get_file()
+        conn = sqlite3.connect(file)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY, data TEXT);")
+            conn.commit()
+        except Exception as exc:
+            print(
+                f"Error creating table 'sessions' due to: {str(exc)}\nQuitting...")
+            os.sys.exit(1)
+        finally:
+            cursor.close()
+            conn.close()
+
+    def sess_exists(self) -> bool:
+        file = self.get_file()
+        if os.path.exists(file) is False:
+            return False
+        conn = sqlite3.connect(file)
+        cursor = conn.cursor()
+        result = False
+        try:
+            cursor.execute(
+                "select count(*) from sessions where sid = ?;", (self.sid, ))
+            result = not not cursor.fetchone()[0]
+        except Exception as exc:
+            print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+        finally:
+            cursor.close()
+            conn.close()
+        return result
+
+    def load(self) -> str:
+        file = self.get_file()
+        if os.path.exists(file):
+            if self.sess_exists():
+                conn = sqlite3.connect(file)
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        "select data from sessions where sid = ?;", (self.sid, ))
+                    data = cursor.fetchone()[0]
+                    #for k in self:
+                    #    if not k == "sid":
+                    #        del self[k] 
+                    old_self = json.loads(data)
+                    for k in old_self:
+                        self[k] = old_self[k]
+                except Exception as exc:
+                    print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+                finally:
+                    cursor.close()
+                    conn.close()
+        else:
+            self.create_db()
+            self.save()
+
+        return json.dumps(self)
+
+    def save(self) -> str:
+        file = self.get_file()
+        if os.path.exists(file) is False:
+            self.create_db()
+        conn = sqlite3.connect(file)
+        cursor = conn.cursor()
+        try:
+            if self.sess_exists():
+                cursor.execute(
+                    "update sessions set data = ? where sid = ?;", (json.dumps(self), self.sid))
+            else:
+                cursor.execute(
+                    "insert into sessions (sid, data) values (?, ?);", (self.sid, json.dumps(self)))
+            conn.commit()
+        except Exception as exc:
+            print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+        finally:
+            cursor.close()
+            conn.close()
+        return json.dumps(self)
+
+# End of session handling support classes
+
+
+# Miscelaneous configuration options
 
 default_config = {
-        'debug': True,
-        'session_manager_class': SessionManager,
-        'session_directory': 'bicchiere_sessions',
-        'session_saving_interval': 5,
-        'static_directory': 'static',
-        'templates_directory': 'templates',
-        'allow_directory_listing': False
-        }
+    'debug': True,
+    'session_class': Session,
+    'sessions_directory': 'bicchiere_sessions',
+    'static_directory': 'static',
+    'templates_directory': 'templates',
+    'allow_directory_listing': False,
+    'pre_load_default_filters': True
+}
 
-### End of miscelaneous configuration options
+# End of miscelaneous configuration options
 
 
-###  Main Bicchiere App class
+# Main Bicchiere App class
 
 class Bicchiere(BicchiereMiddleware):
     """
@@ -917,15 +795,42 @@ class Bicchiere(BicchiereMiddleware):
     """
 
     __version__ = (0, 2, 12)
-
-    __author__  = "Domingo E. Savoretti"
-
+    __author__ = "Domingo E. Savoretti"
     config = default_config
-
     template_filters = {}
-
     known_servers = ['gunicorn', 'bjoern', 'wsgiref']
-    bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"]
+    bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
+
+    def __init__(self, name=None, **kwargs):
+        "Prepares Bicchiere instance to run"
+
+        # Register some common template filter functions
+        if Bicchiere.config['pre_load_default_filters']:
+            Bicchiere.register_template_filter("title", str.title)
+            Bicchiere.register_template_filter("capitalize", str.capitalize)
+            Bicchiere.register_template_filter("upper", str.upper)
+            Bicchiere.register_template_filter("lower", str.lower)
+
+        # First, things that don't vary through calls
+        self.name = name if name else random.choice(Bicchiere.bevande)
+        self.session_class = Bicchiere.config['session_class']
+        if not self.session_class.secret:
+            self.session_class.secret = uuid4().hex
+        self.routes = []
+
+        # Call specific variables
+        self.init_local_data()
+
+        self.environ = None
+        self.start_response = None
+        self.headers = Headers()
+        self.session = None
+        self.cookies = SimpleCookie()
+
+        # And whatever follows....
+        for k in kwargs:
+            self.__dict__[k] = kwargs[k]
+
 
     @property
     def version(self):
@@ -934,16 +839,18 @@ class Bicchiere(BicchiereMiddleware):
 
     def debug(self, *args, **kw):
         if hasattr(self, "config") and hasattr(self.config, "get") and self.config.get("debug", False):
-           print(*args, **kw)
+            print(*args, **kw)
 
-    def set_new_start_response(self, status = "200 OK"):
+    def set_new_start_response(self, status="200 OK"):
         if not self.start_response:
-            self.debug("Start response not set, so cannot set new start response. Returning with empty hands")
+            self.debug(
+                "Start response not set, so cannot set new start response. Returning with empty hands")
             return
         old_start_response = self.start_response
         headers = self.headers
         applied_headers = headers.items()
-        def new_start_response(status, headers, exc_info = None):
+
+        def new_start_response(status, headers, exc_info=None):
             try:
                 if not self.headers_set:
                     self.headers_set = True
@@ -962,22 +869,23 @@ class Bicchiere(BicchiereMiddleware):
     def get_cookie(self, key):
         return self.cookies.get(key, None)
 
-    def redirect(self, path, status_code = 302, status_msg = "Found"):
+    def redirect(self, path, status_code=302, status_msg="Found"):
         self.headers.add_header('Location', path)
         status_line = f"{status_code} {status_msg}"
-        self.set_new_start_response(status = status_line)
+        self.set_new_start_response(status=status_line)
         self.start_response(status_line, self.headers.items())
         return [status_line.encode("utf-8")]
 
-###  Decorators
-##   Content decorators
+# Decorators
+# Content decorators
 
-    def content_type(self, c_type = "text/html", charset = "utf-8", **attrs):
+    def content_type(self, c_type="text/html", charset="utf-8", **attrs):
         def decorator(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
                 del self.headers['Content-Type']
-                self.headers.add_header('Content-Type', c_type, charset = charset, **attrs)
+                self.headers.add_header(
+                    'Content-Type', c_type, charset=charset, **attrs)
                 self.set_new_start_response()
                 self.start_response("200 OK", self.headers.items())
                 return func(*args, **kwargs)
@@ -996,9 +904,9 @@ class Bicchiere(BicchiereMiddleware):
     def csv_content(self, **attrs):
         return self.content_type("text/csv", "utf-8", **attrs)
 
-##  Routing decorators
+# Routing decorators
 
-    def route(self, route_str, methods = ['GET']):
+    def route(self, route_str, methods=['GET']):
         def decorator(func):
             pattern, types = self.build_route_pattern(route_str)
             self.routes.append(Route(pattern, func, types, methods))
@@ -1006,54 +914,27 @@ class Bicchiere(BicchiereMiddleware):
         return decorator
 
     def get(self, route_str):
-        return self.route(route_str, methods = ['GET'])
+        return self.route(route_str, methods=['GET'])
 
     def post(self, route_str):
-        return self.route(route_str, methods = ['POST'])
+        return self.route(route_str, methods=['POST'])
 
     def put(self, route_str):
-        return self.route(route_str, methods = ['PUT'])
+        return self.route(route_str, methods=['PUT'])
 
     def delete(self, route_str):
-        return self.route(route_str, methods = ['DELETE'])
+        return self.route(route_str, methods=['DELETE'])
 
     def head(self, route_str):
-        return self.route(route_str, methods = ['HEAD'])
+        return self.route(route_str, methods=['HEAD'])
 
     def _any(self, route_str):
-        return self.route(route_str, methods = ['GET', 'POST', 'PUT', 'DELETE', 'HEAD'])
+        return self.route(route_str, methods=['GET', 'POST', 'PUT', 'DELETE', 'HEAD'])
 
-###  End of decorators
+# End of decorators
 
-    def __init__(self, name = None, **kwargs):
-        "Prepares Bicchiere instance to run"
-
-        # Register some common template filter functions
-        Bicchiere.register_template_filter("title", str.title)
-        Bicchiere.register_template_filter("capitalize", str.capitalize)
-        Bicchiere.register_template_filter("upper", str.upper)
-        Bicchiere.register_template_filter("lower", str.lower)
-
-        # First, things that don't vary through calls
-        self.name = name if name else random.choice(Bicchiere.bevande)
-        self.session_manager = Bicchiere.config['session_manager_class']()
-        self.routes = []
-
-        # Call specific variables
-        self.init_local_data()
-
-        self.environ = None
-        self.start_response = None
-        self.headers = Headers()
-        self.session = None
-        self.cookies = SimpleCookie()
-
-        # And whatever follows....
-        for k in kwargs:
-            self.__dict__[k] = kwargs[k]
-
-### Thread specific properties, things which are in fact kept in a threading.local instance
-### Necessary to handle multiprocessor/multithreading WSGI servers
+# Thread specific properties, things which are in fact kept in a threading.local instance
+# Necessary to handle multiprocessor/multithreading WSGI servers
 
     @property
     def environ(self):
@@ -1146,7 +1027,8 @@ class Bicchiere(BicchiereMiddleware):
     @headers_set.setter
     def headers_set(self, new_hs):
         self.__local_data.headers_set = new_hs
-        self.debug(f"Setting var self.headers_set to {self.__local_data.headers_set}")
+        self.debug(
+            f"Setting var self.headers_set to {self.__local_data.headers_set}")
 
     @headers_set.deleter
     def headers_set(self):
@@ -1156,7 +1038,11 @@ class Bicchiere(BicchiereMiddleware):
         return self.__local_data.__dict__
 
     def get_session(self, sid):
-        return self.session_manager.load_session(sid)
+        if self.session:
+            self.session.load()
+        else:
+            self.session = self.session_class(sid)
+        return self.session
 
     def clear_headers(self):
         self.headers = Headers()
@@ -1177,11 +1063,12 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data.__dict__.setdefault('form', None)
         self.__local_data.__dict__.setdefault('headers_set', False)
 
-    ### Template related stuff
+    # Template related stuff
 
     @staticmethod
     def get_template_dir():
-        templates_root = Bicchiere.config.get('templates_directory', 'templates')
+        templates_root = Bicchiere.config.get(
+            'templates_directory', 'templates')
         return os.path.join(os.getcwd(), templates_root)
 
     @staticmethod
@@ -1189,18 +1076,21 @@ class Bicchiere(BicchiereMiddleware):
         return os.path.join(Bicchiere.get_template_dir(), template_file)
 
     @staticmethod
-    def preprocess_template(tpl_str = TemplateLight.test_tpl):
+    def preprocess_template(tpl_str=TemplateLight.test_tpl):
         ftpl = StringIO(tpl_str)
         lines = ftpl.readlines()
         ftpl.close()
         for index, line in enumerate(lines):
             stripline = line.strip()
-            m = re.match(r"\{\#\s+include\s+(?P<inc_file>[a-zA-Z0-9.\"\']+)\s+\#\}", stripline)
+            m = re.match(
+                r"\{\#\s+include\s+(?P<inc_file>[a-zA-Z0-9.\"\']+)\s+\#\}", stripline)
             if m:
                 inc_file = m.group_dict().get("inc_file")
                 if not inc_file:
-                    raise TemplateSyntaxError("include directiva must refer to a file")
-                fullpath = Bicchiere.get_template_fullpath(inc_file.replace("\"", "").replace("'", ""))
+                    raise TemplateSyntaxError(
+                        "include directiva must refer to a file")
+                fullpath = Bicchiere.get_template_fullpath(
+                    inc_file.replace("\"", "").replace("'", ""))
                 if os.path.exists(fullpath) and os.path.isfile(fullpath):
                     fp = open(fullpath)
                     new_tpl_str = fp.read()
@@ -1208,11 +1098,12 @@ class Bicchiere(BicchiereMiddleware):
                     replace_line = Bicchiere.preprocess_template(new_tpl_str)
                     lines[index] = replace_line
                 else:
-                    raise TemplateSyntaxError("Included file {0} in line {1} does not exist.".format(inc_file, index))
+                    raise TemplateSyntaxError(
+                        "Included file {0} in line {1} does not exist.".format(inc_file, index))
         return "".join(lines)
 
     @staticmethod
-    def compile_template(tpl_str = TemplateLight.test_tpl):
+    def compile_template(tpl_str=TemplateLight.test_tpl):
         if not tpl_str:
             return None
         words = tpl_str.split()
@@ -1225,7 +1116,7 @@ class Bicchiere(BicchiereMiddleware):
         return TemplateLight(Bicchiere.preprocess_template(tpl_str), **Bicchiere.template_filters)
 
     @staticmethod
-    def render_template(tpl_str = TemplateLight.test_tpl, **kw):
+    def render_template(tpl_str=TemplateLight.test_tpl, **kw):
         if tpl_str.__class__.__name__ == "TemplateLight":
             return tpl_str.render(**kw)
         elif tpl_str.__class__.__name__ == "str":
@@ -1237,13 +1128,13 @@ class Bicchiere(BicchiereMiddleware):
         else:
             return None
 
-    ### End of template related stuff
-
+    # End of template related stuff
 
     def __call__(self, environ, start_response, **kwargs):
-        self.init_local_data() # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
+        # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
+        self.init_local_data()
 
-        self.environ = environ
+        self.environ = environ   
         self.start_response = start_response
         self.clear_headers()
         if self.session:
@@ -1258,9 +1149,11 @@ class Bicchiere(BicchiereMiddleware):
         for h in self.environ:
             if h.lower().endswith('cookie'):
                 self.debug(f"\nLoading stored cookies: {h}: {self.environ[h]}")
-                self.cookies = SimpleCookie(self.environ[h].strip().replace(' ', '_'))
+                self.cookies = SimpleCookie(
+                    self.environ[h].strip().replace(' ', ''))
                 for h in self.cookies:
-                    self.debug(f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
+                    self.debug(
+                        f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
         self.environ['bicchiere_cookies'] = str(self.cookies).strip()
 
         sid = self.cookies.get('sid', None)
@@ -1269,7 +1162,8 @@ class Bicchiere(BicchiereMiddleware):
         if sid:
             sid = sid.value
         else:
-            sid = uuid4().hex
+            #sid = uuid4().hex
+            sid = Session.encrypt()
 
         self.session = self.get_session(sid)
         self.session['USER_AGENT'.lower()] = self.environ['HTTP_USER_AGENT']
@@ -1285,11 +1179,12 @@ class Bicchiere(BicchiereMiddleware):
         #self.debug("Args from querystring: ", self.args)
 
         if self.environ.get('REQUEST_METHOD', 'GET') != 'GET':
-            self.form = cgi.FieldStorage(fp = self.environ.get('wsgi.input'), environ = self.environ, keep_blank_values = 1)
+            self.form = cgi.FieldStorage(fp=self.environ.get(
+                'wsgi.input'), environ=self.environ, keep_blank_values=1)
         else:
             self.form = {}
 
-    #def __iter__(self):
+    # def __iter__(self):
 
         response = None
         #status_msg = "404 Not found"
@@ -1307,7 +1202,8 @@ class Bicchiere(BicchiereMiddleware):
                 found = True
                 self.debug(f"RESOURCE {resource} FOUND")
                 if os.path.isfile(resource):
-                    mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
+                    mime_type, _ = guess_type(
+                        resource) or ('text/plain', 'utf-8')
                     fp = open(resource, 'rb')
                     response = [b'']
                     r = fp.read(1024)
@@ -1316,41 +1212,51 @@ class Bicchiere(BicchiereMiddleware):
                         r = fp.read(1024)
                     fp.close()
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', mime_type, charset = 'utf-8')
+                    self.headers.add_header(
+                        'Content-Type', mime_type, charset='utf-8')
                     status_msg = Bicchiere.get_status_line(200)
                 elif os.path.isdir(resource):
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', 'text/html', charset = 'utf-8')
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset='utf-8')
                     if Bicchiere.config.get('allow_directory_listing', False) or Bicchiere.config.get('debug', False):
                         status_msg = Bicchiere.get_status_line(200)
-                        response = ['<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
-                        response.append(f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>')
-                        left, right = os.path.split(self.environ.get('path_info'.upper()))
+                        response = [
+                            '<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
+                        response.append(
+                            f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>')
+                        left, right = os.path.split(
+                            self.environ.get('path_info'.upper()))
                         if left != "/":
-                            response.append(f'<p title="Parent directory"><a href="{left}">..</a></p>')
+                            response.append(
+                                f'<p title="Parent directory"><a href="{left}">..</a></p>')
                         l = os.listdir(resource)
                         l.sort()
                         for f in l:
                             fullpath = os.path.join(resource, f)
                             if os.path.isfile(fullpath) or os.path.isdir(fullpath):
-                                href = os.path.join(self.environ.get('path_info'.upper()) , f)
-                                response.append(f'<p><a href="{href}">{f}</a></p>')
+                                href = os.path.join(
+                                    self.environ.get('path_info'.upper()), f)
+                                response.append(
+                                    f'<p><a href="{href}">{f}</a></p>')
                     else:
                         status_msg = Bicchiere.get_status_line(403)
-                        response =  [f'''<strong>403</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
+                        response = [f'''<strong>403</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                     {self.environ.get('path_info'.upper())}</span> Directory listing forbidden.''']
                 else:
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', 'text/html', charset = 'utf-8')
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset='utf-8')
                     status_msg = Bicchiere.get_status_line(400)
-                    response =  [f'''<strong>400</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
+                    response = [f'''<strong>400</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ.get('path_info'.upper())}</span> Bad request, file type cannot be handled.''']
             else:
                 self.debug(f"RESOURCE {resource} NOT FOUND")
-                response =  [f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
+                response = [f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ.get('path_info'.upper())}</span> not found.''']
                 del self.headers['Content-Type']
-                self.headers.add_header('Content-Type', 'text/html', charset = 'utf-8')
+                self.headers.add_header(
+                    'Content-Type', 'text/html', charset='utf-8')
                 status_msg = Bicchiere.get_status_line(404)
 
             self.set_new_start_response()
@@ -1363,9 +1269,10 @@ class Bicchiere(BicchiereMiddleware):
         if len(self.routes) == 0:
             if self.environ['path_info'.upper()] != '/':
                 del self.headers['Content-Type']
-                self.headers.add_header('Content-Type', 'text/html', charset = "utf-8")
+                self.headers.add_header(
+                    'Content-Type', 'text/html', charset="utf-8")
                 self.set_new_start_response()
-                response =  f"404 {self.environ['path_info'.upper()]} not found."
+                response = f"404 {self.environ['path_info'.upper()]} not found."
             else:
                 #status_msg = "200 OK"
                 status_msg = Bicchiere.get_status_line(200)
@@ -1380,7 +1287,8 @@ class Bicchiere(BicchiereMiddleware):
                         response = route.func(**route.args)
                     else:
                         del self.headers['Content-Type']
-                        self.headers.add_header('Content-Type', 'text/html', charset = "utf-8")
+                        self.headers.add_header(
+                            'Content-Type', 'text/html', charset="utf-8")
                         self.set_new_start_response()
                         #status_msg = f'405 {self.get_status_codes()["405"]["status_msg"]}'
                         status_msg = Bicchiere.get_status_line(405)
@@ -1389,14 +1297,16 @@ class Bicchiere(BicchiereMiddleware):
                                        not allowed for this URL.'''
                 else:
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', 'text/html', charset = "utf-8")
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset="utf-8")
                     self.set_new_start_response()
                     status_msg = Bicchiere.get_status_line(404)
                     response = f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ["PATH_INFO"]}</span> not found.'''
             except Exception as exc:
                 del self.headers['Content-Type']
-                self.headers.add_header('Content-Type', 'text/html', charset = "utf-8")
+                self.headers.add_header(
+                    'Content-Type', 'text/html', charset="utf-8")
                 self.set_new_start_response()
                 status_msg = Bicchiere.get_status_line(500)
                 response = f'''<strong>500</strong>&nbsp;&nbsp;&nbsp;
@@ -1406,9 +1316,11 @@ class Bicchiere(BicchiereMiddleware):
         if not self.headers_set:
             if 'content-type' not in self.headers:
                 if response and self.is_html(response):
-                    self.headers.add_header('Content-Type', 'text/html', charset = 'utf-8');
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset='utf-8')
                 else:
-                    self.headers.add_header('Content-Type', 'text/plain', charset = 'utf-8');
+                    self.headers.add_header(
+                        'Content-Type', 'text/plain', charset='utf-8')
                 self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
 
@@ -1425,7 +1337,7 @@ class Bicchiere(BicchiereMiddleware):
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
         for route in self.routes:
-        #for route_pattern, view_function, methods, type_dict in self.routes:
+            # for route_pattern, view_function, methods, type_dict in self.routes:
             r = route.match(path)
             if r:
                 return r
@@ -1433,7 +1345,6 @@ class Bicchiere(BicchiereMiddleware):
 
     def __str__(self):
         return f"{self.name} version {self.version}"
-
 
     @staticmethod
     def is_html(fragment):
@@ -1459,23 +1370,24 @@ class Bicchiere(BicchiereMiddleware):
             retval = b''
         if type(s).__name__ == 'generator':
             #print("Got a generator, transforming it into a list")
-            s = [x for x in s] # pack the generator in a list and then go on
+            s = [x for x in s]  # pack the generator in a list and then go on
         if len(s) == 0:
             #print(f"Length s for provided {s.__class__.__name__}, returning an empty bytes string")
             retval = b''
         elif type(s[0]) == int:
             #print("Got a byte string, returning it unchanged")
-            retval =  s # It's a sequence of ints, i.e. bytes
+            retval = s  # It's a sequence of ints, i.e. bytes
         elif type(s[0]) == bytes:
             #print("Got a sequence of byte strings, joining it in one prev. to returning it.")
-            retval = b''.join(s) # It's a sequence of byte strings
+            retval = b''.join(s)  # It's a sequence of byte strings
         elif type(s[0]) == str:
             #print(f"STRING: '{s[ : 20]}' ...")
-            #if (len(s[0]) > 1):
+            # if (len(s[0]) > 1):
             #    print(f"List of strings. First is '{s[0]}'. Joining the whole thing prev to return")
-            #else:
+            # else:
             #    print("Just one string. Joining it prev to return")
-            retval = b''.join([x.encode('utf-8') for x in s]) # encode each str to bytes prev to joining
+            # encode each str to bytes prev to joining
+            retval = b''.join([x.encode('utf-8') for x in s])
             #print(f"Return value is: {retval}")
         else:
             retval = b''
@@ -1483,72 +1395,72 @@ class Bicchiere(BicchiereMiddleware):
         return retval
 
     @staticmethod
-    def encode_image(image_data, image_type = 'image/jpeg'):
+    def encode_image(image_data, image_type='image/jpeg'):
         img_template = "data:{0};base64,{1}"
         img_string = base64.b64encode(image_data).decode("utf-8")
         return img_template.format(image_type, img_string)
 
     @staticmethod
-    def get_status_code(code = None):
+    def get_status_code(code=None):
         "Get section and msg for provided code, or the whole list if no code is provided"
         codes = {'100': {'section': 'Section 10.1.1', 'status_msg': 'Continue'},
-                '101': {'section': 'Section 10.1.2', 'status_msg': 'Switching Protocols'},
-                '200': {'section': 'Section 10.2.1', 'status_msg': 'OK'},
-                '201': {'section': 'Section 10.2.2', 'status_msg': 'Created'},
-                '202': {'section': 'Section 10.2.3', 'status_msg': 'Accepted'},
-                '203': {'section': 'Section 10.2.4',
-                        'status_msg': 'Non-Authoritative Information'},
-                '204': {'section': 'Section 10.2.5', 'status_msg': 'No Content'},
-                '205': {'section': 'Section 10.2.6', 'status_msg': 'Reset Content'},
-                '206': {'section': 'Section 10.2.7', 'status_msg': 'Partial Content'},
-                '300': {'section': 'Section 10.3.1', 'status_msg': 'Multiple Choices'},
-                '301': {'section': 'Section 10.3.2', 'status_msg': 'Moved Permanently'},
-                '302': {'section': 'Section 10.3.3', 'status_msg': 'Found'},
-                '303': {'section': 'Section 10.3.4', 'status_msg': 'See Other'},
-                '304': {'section': 'Section 10.3.5', 'status_msg': 'Not Modified'},
-                '305': {'section': 'Section 10.3.6', 'status_msg': 'Use Proxy'},
-                '307': {'section': 'Section 10.3.8', 'status_msg': 'Temporary Redirect'},
-                '400': {'section': 'Section 10.4.1', 'status_msg': 'Bad Request'},
-                '401': {'section': 'Section 10.4.2', 'status_msg': 'Unauthorized'},
-                '402': {'section': 'Section 10.4.3', 'status_msg': 'Payment Required'},
-                '403': {'section': 'Section 10.4.4', 'status_msg': 'Forbidden'},
-                '404': {'section': 'Section 10.4.5', 'status_msg': 'Not Found'},
-                '405': {'section': 'Section 10.4.6', 'status_msg': 'Method Not Allowed'},
-                '406': {'section': 'Section 10.4.7', 'status_msg': 'Not Acceptable'},
-                '407': {'section': 'Section 10.4.8',
-                        'status_msg': 'Proxy Authentication Required'},
-                '408': {'section': 'Section 10.4.9', 'status_msg': 'Request Time-out'},
-                '409': {'section': 'Section 10.4.10', 'status_msg': 'Conflict'},
-                '410': {'section': 'Section 10.4.11', 'status_msg': 'Gone'},
-                '411': {'section': 'Section 10.4.12', 'status_msg': 'Length Required'},
-                '412': {'section': 'Section 10.4.13', 'status_msg': 'Precondition Failed'},
-                '413': {'section': 'Section 10.4.14',
-                        'status_msg': 'Request Entity Too Large'},
-                '414': {'section': 'Section 10.4.15', 'status_msg': 'Request-URI Too Large'},
-                '415': {'section': 'Section 10.4.16', 'status_msg': 'Unsupported Media Type'},
-                '416': {'section': 'Section 10.4.17',
-                        'status_msg': 'Requested range not satisfiable'},
-                '417': {'section': 'Section 10.4.18', 'status_msg': 'Expectation Failed'},
-                '500': {'section': 'Section 10.5.1', 'status_msg': 'Internal Server Error'},
-                '501': {'section': 'Section 10.5.2', 'status_msg': 'Not Implemented'},
-                '502': {'section': 'Section 10.5.3', 'status_msg': 'Bad Gateway'},
-                '503': {'section': 'Section 10.5.4', 'status_msg': 'Service Unavailable'},
-                '504': {'section': 'Section 10.5.5', 'status_msg': 'Gateway Time-out'},
-                '505': {'section': 'Section 10.5.6',
-                        'status_msg': 'HTTP Version not supported'}}
+                 '101': {'section': 'Section 10.1.2', 'status_msg': 'Switching Protocols'},
+                 '200': {'section': 'Section 10.2.1', 'status_msg': 'OK'},
+                 '201': {'section': 'Section 10.2.2', 'status_msg': 'Created'},
+                 '202': {'section': 'Section 10.2.3', 'status_msg': 'Accepted'},
+                 '203': {'section': 'Section 10.2.4',
+                         'status_msg': 'Non-Authoritative Information'},
+                 '204': {'section': 'Section 10.2.5', 'status_msg': 'No Content'},
+                 '205': {'section': 'Section 10.2.6', 'status_msg': 'Reset Content'},
+                 '206': {'section': 'Section 10.2.7', 'status_msg': 'Partial Content'},
+                 '300': {'section': 'Section 10.3.1', 'status_msg': 'Multiple Choices'},
+                 '301': {'section': 'Section 10.3.2', 'status_msg': 'Moved Permanently'},
+                 '302': {'section': 'Section 10.3.3', 'status_msg': 'Found'},
+                 '303': {'section': 'Section 10.3.4', 'status_msg': 'See Other'},
+                 '304': {'section': 'Section 10.3.5', 'status_msg': 'Not Modified'},
+                 '305': {'section': 'Section 10.3.6', 'status_msg': 'Use Proxy'},
+                 '307': {'section': 'Section 10.3.8', 'status_msg': 'Temporary Redirect'},
+                 '400': {'section': 'Section 10.4.1', 'status_msg': 'Bad Request'},
+                 '401': {'section': 'Section 10.4.2', 'status_msg': 'Unauthorized'},
+                 '402': {'section': 'Section 10.4.3', 'status_msg': 'Payment Required'},
+                 '403': {'section': 'Section 10.4.4', 'status_msg': 'Forbidden'},
+                 '404': {'section': 'Section 10.4.5', 'status_msg': 'Not Found'},
+                 '405': {'section': 'Section 10.4.6', 'status_msg': 'Method Not Allowed'},
+                 '406': {'section': 'Section 10.4.7', 'status_msg': 'Not Acceptable'},
+                 '407': {'section': 'Section 10.4.8',
+                         'status_msg': 'Proxy Authentication Required'},
+                 '408': {'section': 'Section 10.4.9', 'status_msg': 'Request Time-out'},
+                 '409': {'section': 'Section 10.4.10', 'status_msg': 'Conflict'},
+                 '410': {'section': 'Section 10.4.11', 'status_msg': 'Gone'},
+                 '411': {'section': 'Section 10.4.12', 'status_msg': 'Length Required'},
+                 '412': {'section': 'Section 10.4.13', 'status_msg': 'Precondition Failed'},
+                 '413': {'section': 'Section 10.4.14',
+                         'status_msg': 'Request Entity Too Large'},
+                 '414': {'section': 'Section 10.4.15', 'status_msg': 'Request-URI Too Large'},
+                 '415': {'section': 'Section 10.4.16', 'status_msg': 'Unsupported Media Type'},
+                 '416': {'section': 'Section 10.4.17',
+                         'status_msg': 'Requested range not satisfiable'},
+                 '417': {'section': 'Section 10.4.18', 'status_msg': 'Expectation Failed'},
+                 '500': {'section': 'Section 10.5.1', 'status_msg': 'Internal Server Error'},
+                 '501': {'section': 'Section 10.5.2', 'status_msg': 'Not Implemented'},
+                 '502': {'section': 'Section 10.5.3', 'status_msg': 'Bad Gateway'},
+                 '503': {'section': 'Section 10.5.4', 'status_msg': 'Service Unavailable'},
+                 '504': {'section': 'Section 10.5.5', 'status_msg': 'Gateway Time-out'},
+                 '505': {'section': 'Section 10.5.6',
+                         'status_msg': 'HTTP Version not supported'}}
         return codes if not code else codes.get(str(code), codes.get('404'))
 
     @staticmethod
-    def get_status_line(code = 404):
+    def get_status_line(code=404):
         return f"{code} {Bicchiere.get_status_code(str(code))['status_msg']}"
 
     @staticmethod
     def is_iterable(obj):
-       return hasattr(obj, '__iter__')
+        return hasattr(obj, '__iter__')
 
     @staticmethod
     def is_callable(obj):
-       return hasattr(obj, '__call__') or Bicchiere.is_iterable(obj)
+        return hasattr(obj, '__call__') or Bicchiere.is_iterable(obj)
 
     @staticmethod
     def build_route_pattern(route):
@@ -1563,18 +1475,18 @@ class Bicchiere(BicchiereMiddleware):
                 return ''
             params.append(m.group(4))
             if not m.group(2):
-                 params_types.append(type("42"))
+                params_types.append(type("42"))
             else:
-                 if not m.group(3) in accepted_types:
-                     raise ValueError(f"Unknown parameter type: {m.group(3)}")
-                 else:
-                     if m.group(3) == 'int':
+                if not m.group(3) in accepted_types:
+                    raise ValueError(f"Unknown parameter type: {m.group(3)}")
+                else:
+                    if m.group(3) == 'int':
                         ptype = type(42)
-                     elif m.group(3) == 'float':
+                    elif m.group(3) == 'float':
                         ptype = type(42.)
-                     else:
+                    else:
                         ptype = type("42")
-                 params_types.append(ptype)
+                params_types.append(ptype)
             return replace_regex.format(m.group(4))
 
         route_regex = re.sub(param_regex, regex_parser, route)
@@ -1909,8 +1821,8 @@ class Bicchiere(BicchiereMiddleware):
         </div>
         """
 
-    #@staticmethod
-    #def group_capitalize(stri):
+    # @staticmethod
+    # def group_capitalize(stri):
     #    return  ' '.join(list(map(lambda w: w.capitalize(), re.split(r'\s+', stri))))
 
     @staticmethod
@@ -1922,27 +1834,27 @@ class Bicchiere(BicchiereMiddleware):
     def get_img_favicon():
         return f'<img src="{Bicchiere.get_favicon()}" alt="favicon.ico" title="favicon"/>'
 
-### End of static stuff
+# End of static stuff
 
     def default_handler(self):
-       del self.headers['content-type']
-       self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
-       self.set_new_start_response()
+        del self.headers['content-type']
+        self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
+        self.set_new_start_response()
 
-       final_response = []
-       final_response.append("""
+        final_response = []
+        final_response.append("""
        <!doctype html>
        <html lang=it><head><title>Bicchiere Environment Vars</title></head>
        <body style="color: blue; font-family: Helvetica; padding: 0.5em;">\n
        """)
 
-       response = simple_demo_app(self.environ, self.start_response)
+        response = simple_demo_app(self.environ, self.start_response)
 
-       for line in response:
-           line = line.decode("utf-8").replace(
-           '\n', '<br/><br/>\n').replace(
-           'Hello world!',
-           '''
+        for line in response:
+            line = line.decode("utf-8").replace(
+                '\n', '<br/><br/>\n').replace(
+                'Hello world!',
+                '''
               <a style="text-decoration: none; color: steelblue;" href="/" title="Home">
                 <h2>Ciao, Mondo Bicchiere!</h2>
               </a>
@@ -1950,18 +1862,19 @@ class Bicchiere(BicchiereMiddleware):
                 WSGI Environment Variables
               </h1>
            ''')
-           final_response.append("<p>{0}</p>".format(line))
+            final_response.append("<p>{0}</p>".format(line))
 
-       final_response.append("</body></html>")
-       final_response = "".join(final_response)
+        final_response.append("</body></html>")
+        final_response = "".join(final_response)
 
-       #self.debug(f"Yielding final response from Bicchiere default_handler: {final_response[ : 30]} ...")
-       #self.start_response("200 OK", self.headers.items())
-       return final_response
+        #self.debug(f"Yielding final response from Bicchiere default_handler: {final_response[ : 30]} ...")
+        #self.start_response("200 OK", self.headers.items())
+        return final_response
 
     @classmethod
     def register_template_filter(cls, filter_name: str, filter_func):
-        if (not isinstance(filter_name, str)): #or (filter_func.__class__.__name__ != "function"):
+        # or (filter_func.__class__.__name__ != "function"):
+        if (not isinstance(filter_name, str)):
             return False
         else:
             cls.template_filters[filter_name] = filter_func
@@ -1979,17 +1892,15 @@ class Bicchiere(BicchiereMiddleware):
     def demo_app(cls):
         bevanda = random.choice(Bicchiere.bevande)
 
-        #Bicchiere.config['session_manager_class'] = SessionManager
-        #Bicchiere.config['session_manager_class'] = FileSessionManager
-        #Bicchiere.config['session_manager_class'] = DbSessionManager
-
+        Bicchiere.config['session_class'] = FileSession
+    
         app = cls(f"Demo {bevanda} App")
 
-        #prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
+        # prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
         #        demo_css = Bicchiere.get_demo_css())
         #suffix = Bicchiere.get_demo_suffix()
 
-        #Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
+        # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
         demo_page_template = chr(10).join([
             header_prefix_html,
             body_style,
@@ -2009,7 +1920,7 @@ class Bicchiere(BicchiereMiddleware):
         menu = MenuBuilder()
 
         menu.addItem(MenuItem("Home", "/"))
-        
+
         dropdown = DropdownMenu("Miscelaneous")
         dropdown.addItem(MenuItem("Hello Page", "/hello"))
         dropdown.addItem(MenuItem("HTTP and WSGI variables", "/environ"))
@@ -2017,19 +1928,23 @@ class Bicchiere(BicchiereMiddleware):
         dropdown.addItem(MenuItem("Favicon - Text Mode", "/favicon.ico"))
         dropdown.addItem(MenuItem("Favicon - Image", "/img/favicon.ico"))
         menu.addItem(dropdown)
-        
+
         dropdown = DropdownMenu("Session variables and cookies")
         dropdown.addItem(MenuItem("Session variables", "/showsession"))
         dropdown.addItem(MenuItem("Cookies", "/showcookies"))
         menu.addItem(dropdown)
-        
+
         dropdown = DropdownMenu("Redirection Examples")
         dropdown.addItem(MenuItem("Factorial of 42", "/f42"))
-        dropdown.addItem(MenuItem("The origin of everything: Python!", "/python"))
+        dropdown.addItem(
+            MenuItem("The origin of everything: Python!", "/python"))
         dropdown.addItem(MenuItem("Python per noi...", "/python_it"))
-        dropdown.addItem(MenuItem("WSGI (Web Server Gateway Interface, the tech behind Bicchiere) Wikipedia page", "/wsgiwiki"))
-        dropdown.addItem(MenuItem("WSGI Python secret web weapon (Part I)", "/wsgisecret"))
-        dropdown.addItem(MenuItem("WSGI Python secret web weapon (Part II)", "/wsgisecret2"))
+        dropdown.addItem(MenuItem(
+            "WSGI (Web Server Gateway Interface, the tech behind Bicchiere) Wikipedia page", "/wsgiwiki"))
+        dropdown.addItem(
+            MenuItem("WSGI Python secret web weapon (Part I)", "/wsgisecret"))
+        dropdown.addItem(
+            MenuItem("WSGI Python secret web weapon (Part II)", "/wsgisecret2"))
         menu.addItem(dropdown)
 
         dropdown = DropdownMenu("Static Content Example")
@@ -2038,24 +1953,23 @@ class Bicchiere(BicchiereMiddleware):
 
         menu.addItem(MenuItem("About", "/about"))
 
-
-
         @app.get('/')
         @app.html_content()
         def home():
-           randomcolor = random.choice(['red','blue','green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
-           #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
-           heading =  "WSGI, Bicchiere Flavor"
-           contents = '''<h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>'''
-           contents = contents.format(randomcolor, bevanda)
-           info = Bicchiere.get_demo_content().format(heading =  heading, contents = contents)
-           #return "{}{}{}".format(prefix, info, suffix)
-           #Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
-           return Bicchiere.render_template(demo_page_template, 
-           page_title = "Demo Bicchiere App - Home",
-           menu_content = str(menu), 
-           main_contents = info)
-           
+            randomcolor = random.choice(
+                ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
+            #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
+            heading = "WSGI, Bicchiere Flavor"
+            contents = '''<h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>'''
+            contents = contents.format(randomcolor, bevanda)
+            info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
+            # return "{}{}{}".format(prefix, info, suffix)
+            # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Home",
+                                             menu_content=str(menu),
+                                             main_contents=info)
+
         @app.get('/favicon.ico')
         @app.html_content()
         def favicon():
@@ -2063,11 +1977,10 @@ class Bicchiere(BicchiereMiddleware):
             <p>{Bicchiere.get_favicon()}</p>
             <p><a href="/">Home</a></p>
             """
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Favicon source",
-            menu_content = str(menu), 
-            main_contents = info)
-           
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Favicon source",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app.get('/img/favicon.ico')
         @app.html_content()
@@ -2076,12 +1989,12 @@ class Bicchiere(BicchiereMiddleware):
             <p>{Bicchiere.get_img_favicon()}</p>
             <p><a href="/">Home</a></p>
             """
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Favicon source",
-            menu_content = str(menu), 
-            main_contents = info)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Favicon source",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
-        @app.route("/upload", methods = ['GET', 'POST'])
+        @app.route("/upload", methods=['GET', 'POST'])
         def upload():
             pinfo = "Arriverà presto..."
             if app.environ['request_method'.upper()] == 'GET':
@@ -2118,13 +2031,13 @@ class Bicchiere(BicchiereMiddleware):
                 pinfo = """
                         <div class="panel w40">
                         """
-                pinfo +=f'<div class="row"><label class="steelblue">Description</label><strong>{description}</strong></div></hr>'
-                pinfo +=f'<div class="row"><label class="steelblue">Filename</label><strong>{filename}</strong></div></hr>'
+                pinfo += f'<div class="row"><label class="steelblue">Description</label><strong>{description}</strong></div></hr>'
+                pinfo += f'<div class="row"><label class="steelblue">Filename</label><strong>{filename}</strong></div></hr>'
                 if filename:
-                    pinfo +=f'<div class="row"><label class="steelblue">File length</label><strong>{body_len} bytes</strong></div></hr>'
+                    pinfo += f'<div class="row"><label class="steelblue">File length</label><strong>{body_len} bytes</strong></div></hr>'
                     if "image" in file_type:
                         img_src = Bicchiere.encode_image(body, file_type)
-                        pinfo +=f'<div class="centered"><img src="{img_src}" style="max-width: 100%; height: auto;" /></div></hr>'
+                        pinfo += f'<div class="centered"><img src="{img_src}" style="max-width: 100%; height: auto;" /></div></hr>'
                     elif 'text' in file_type:
                         pinfo += f'<div class="centered"><textarea style="width=12em; height: 10em;">{body}</textarea></div></hr>'
                     else:
@@ -2136,46 +2049,46 @@ class Bicchiere(BicchiereMiddleware):
                          '''
                 pinfo += "</div>"
 
-            heading =  "Upload Example"
-            info = Bicchiere.get_demo_content().format(heading =  heading, contents = pinfo)
+            heading = "Upload Example"
+            info = Bicchiere.get_demo_content().format(heading=heading, contents=pinfo)
 #            return "{}{}{}".format(prefix, info, suffix)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Upload example",
-            menu_content = str(menu), 
-            main_contents = info)
-           
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Upload example",
+                                             menu_content=str(menu),
+                                             main_contents=info)
+
         @app.get("/hello")
         @app.get("/hello/<who>")
         @app.html_content()
-        def hello(who = app.name):
+        def hello(who=app.name):
             if who == app.name and 'who' in app.args and len(app.args.get('who', '')):
                 who = app.args.get('who')
             #heading = f"Benvenuto, {Bicchiere.group_capitalize(who)}!!!"
             heading = f"Benvenuto, {who.title()}!!!"
-            info = Bicchiere.get_demo_content().format(heading =  heading, contents = "")
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Hello Page",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(heading=heading, contents="")
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Hello Page",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app.get("/showstatic")
         def showstatic():
             heading = 'Static Contents'
-            contents ='''
+            contents = '''
                 <div class="w60 panel">
                   <iframe src="/static" style="min-height: 22em; height: 22em; padding: 1em; border: none;"></iframe>
                 </div>
                       '''
-            info = Bicchiere.get_demo_content().format(heading =  heading, contents = contents)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Contents of static directory",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Contents of static directory",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app._any("/factorial")
         @app._any("/factorial/<int:number>")
         @app.html_content()
-        def factorial(number = 7):
+        def factorial(number=7):
             if app.environ['REQUEST_METHOD'] == 'GET':
                 n = number
             else:
@@ -2186,20 +2099,21 @@ class Bicchiere(BicchiereMiddleware):
                     n = number
             result = reduce(lambda a, b: a * b, range(1, n + 1))
             pinfo = f'<div class="wrapped">El factorial de {n} es <br/>&nbsp;<br/>{result}</div>'
-            info = Bicchiere.get_demo_content().format(heading =  "Factorials", contents = pinfo)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Factorial",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(
+                heading="Factorials", contents=pinfo)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Factorial",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app._any('/environ')
         def env():
             contents = ''.join([x for x in app.default_handler()])
-            info = Bicchiere.get_demo_content().format(heading =  "", contents = contents)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Environment vars",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(heading="", contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Environment vars",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app.get("/f42")
         def f42():
@@ -2227,9 +2141,11 @@ class Bicchiere(BicchiereMiddleware):
 
         @app.post("/setacookie")
         def setacookie():
-            app.debug(f"POST: cookie posteada!   -   {app.form['key']}={app.form['value']}")
+            app.debug(
+                f"POST: cookie posteada!   -   {app.form['key']}={app.form['value']}")
             if app.form['key'].value.lower() == 'sid':
-                raise KeyError("SID cannot be modified/deleted. It's meant only for internal use")
+                raise KeyError(
+                    "SID cannot be modified/deleted. It's meant only for internal use")
             cookie_opts = {}
             if app.form['value'].value:
                 if app.form['max_age'].value:
@@ -2237,10 +2153,11 @@ class Bicchiere(BicchiereMiddleware):
             else:
                 cookie_opts['Max-Age'] = '0'
 
-            app.set_cookie(key = app.form['key'].value.strip(),  value = app.form["value"].value.strip(), **cookie_opts)
+            app.set_cookie(key=app.form['key'].value.strip(
+            ),  value=app.form["value"].value.strip(), **cookie_opts)
             return app.redirect('/showcookies')
 
-        @app.route("/showcookies", methods = ['GET'])
+        @app.route("/showcookies", methods=['GET'])
         @app.html_content()
         def showcookies():
             contents = '<div class="w60 panel">'
@@ -2259,18 +2176,20 @@ class Bicchiere(BicchiereMiddleware):
                     </form>
                 </div>
             '''
-            info = Bicchiere.get_demo_content().format(heading =  "Cookies", contents = contents)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Cookies",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(
+                heading="Cookies", contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Cookies",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
-        @app.route("/showsession", methods = ["GET", "POST"])
+        @app.route("/showsession", methods=["GET", "POST"])
         @app.html_content()
         def showsession():
             if app.environ.get('request_method'.upper(), 'GET').upper() == "POST":
                 if app.form['key'].value.lower() == 'sid':
-                    raise KeyError("SID cannot be modified/deleted. It's meant only for internal use")
+                    raise KeyError(
+                        "SID cannot be modified/deleted. It's meant only for internal use")
                 if app.form['value'].value:
                     app.session[app.form['key'].value] = app.form['value'].value
                 else:
@@ -2295,15 +2214,16 @@ class Bicchiere(BicchiereMiddleware):
                 </div>
             '''
             contents += "</div>"
-            info = Bicchiere.get_demo_content().format(heading =  "Session Data", contents = contents)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - Session vars",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(
+                heading="Session Data", contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Session vars",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         @app.get("/about")
         def about():
-            contents="""
+            contents = """
             Lorem ipsum dolor sit amet consectetur adipisicing elit. Maxime mollitia,
             molestiae quas vel sint commodi repudiandae consequuntur voluptatum laborum
             numquam blanditiis harum quisquam eius sed odit fugiat iusto fuga praesentium
@@ -2326,11 +2246,12 @@ class Bicchiere(BicchiereMiddleware):
             totam ratione voluptas quod exercitationem fuga. Possimus quis earum veniam 
             quasi aliquam eligendi, placeat qui corporis!
             """
-            info = Bicchiere.get_demo_content().format(heading =  "The proverbial about page", contents = contents)
-            return Bicchiere.render_template(demo_page_template, 
-            page_title = "Demo Bicchiere App - About page",
-            menu_content = str(menu), 
-            main_contents = info)
+            info = Bicchiere.get_demo_content().format(
+                heading="The proverbial about page", contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - About page",
+                                             menu_content=str(menu),
+                                             main_contents=info)
 
         return app
 
@@ -2341,53 +2262,58 @@ class Bicchiere(BicchiereMiddleware):
         del obj
         return version
 
-    def run(self, host = "localhost", port = 8086, application = None, server_name = None):
+    def run(self, host="localhost", port=8086, application=None, server_name=None):
         application = application or self
         server_name = server_name or 'wsgiref'
         orig_server_name = server_name
         server_name = server_name.lower()
 
         if server_name not in self.known_servers:
-            self.debug(f"Server '{orig_server_name}' not known as of now. Switching to built-in WsgiRef")
+            self.debug(
+                f"Server '{orig_server_name}' not known as of now. Switching to built-in WsgiRef")
             server_name = 'wsgiref'
 
         server = None
         server_action = None
 
         if server_name == 'bjoern':
-             application.config['debug'] = False
-             try:
-                 import bjoern as server
-                 server_action = lambda: server.run(application, host, port)
-             except Exception as exc:
-                 print(f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
-                 server_name = 'wsgiref'
+            application.config['debug'] = False
+            try:
+                import bjoern as server
+                def server_action(): return server.run(application, host, port)
+            except Exception as exc:
+                print(
+                    f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
+                server_name = 'wsgiref'
 
         if server_name == 'gunicorn':
-             application.config['debug'] = False
-             try:
-                 from gunicorn.app.base import BaseApplication as server
-                 server_action = lambda: server(application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
-             except Exception as exc:
-                 print(f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
-                 server_name = 'wsgiref'
+            application.config['debug'] = False
+            try:
+                from gunicorn.app.base import BaseApplication as server
+                def server_action(): return server(
+                    application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
+            except Exception as exc:
+                print(
+                    f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
+                server_name = 'wsgiref'
 
         if server_name == 'wsgiref':
-             application.config['debug'] = True
-             server = make_server(host, port, application)
-             server_action = server.serve_forever
+            application.config['debug'] = True
+            server = make_server(host, port, application)
+            server_action = server.serve_forever
 
         try:
-            #server.serve_forever()
+            # server.serve_forever()
             print("\n\n", f"Running Bicchiere WSGI ({application.name}) version {Bicchiere.get_version()}",
-                              f"using {(server_name or 'wsgiref').capitalize()}",
-                              f"server on {host}:{port if port else ''}",
-                              f"\n Current working file: {os.path.abspath(__file__)}", "\n")
+                  f"using {(server_name or 'wsgiref').capitalize()}",
+                  f"server on {host}:{port if port else ''}",
+                  f"\n Current working file: {os.path.abspath(__file__)}", "\n")
             server_action()
         except KeyboardInterrupt:
             print("\n\nBicchiere è uscito del palco...\n")
         except Exception as exc:
-            print(f"\n\n{'-' * 12}\nUnexpected exception: {str(exc)}\n{'-' * 12}\n")
+            print(
+                f"\n\n{'-' * 12}\nUnexpected exception: {str(exc)}\n{'-' * 12}\n")
         finally:
             if hasattr(server, 'socket') and hasattr(server.socket, 'close'):
                 try:
@@ -2411,39 +2337,46 @@ class Bicchiere(BicchiereMiddleware):
                     pass
             print("\nBicchiere ha finito il suo compito.\n")
 
-###  End main Bicchiere App class
+# End main Bicchiere App class
 
-### Miscelaneous exports
+# Miscelaneous exports
+
 
 def demo_app():
     "Returns demo app for test purposes"
     return Bicchiere.demo_app()
 
-application = demo_app() # Rende uWSGI felice :-)
 
-def run(host = 'localhost', port = 8086, app = application, server_name = 'wsgiref'):
+application = demo_app()  # Rende uWSGI felice :-)
+
+
+def run(host='localhost', port=8086, app=application, server_name='wsgiref'):
     "Shortcut to run demo app, or any WSGI compliant app, for that matter"
     runner = application
     runner.run(host, port, app, server_name)
 
-###  End Miscelaneous exports
+# End Miscelaneous exports
 
 
-
-### Provervial main function
+# Provervial main function
 
 def main():
     "Executes demo app"
 
     import argparse
-    parser = argparse.ArgumentParser(description='Command line arguments for Bicchiere')
-    parser.add_argument('-p', '--port', type = int, default = 8086, help = "Server port number.")
-    parser.add_argument('-a', '--addr', type = str, default = "127.0.0.1", help = "Server address.")
-    parser.add_argument('-s', '--server', type = str, default = "wsgiref", help = "Server software.", choices = Bicchiere.known_servers)
+    parser = argparse.ArgumentParser(
+        description='Command line arguments for Bicchiere')
+    parser.add_argument('-p', '--port', type=int,
+                        default=8086, help="Server port number.")
+    parser.add_argument('-a', '--addr', type=str,
+                        default="127.0.0.1", help="Server address.")
+    parser.add_argument('-s', '--server', type=str, default="wsgiref",
+                        help="Server software.", choices=Bicchiere.known_servers)
     args = parser.parse_args()
 
     os.system("clear")
-    run(port = args.port, host = args.addr, server_name = args.server)
+    run(port=args.port, host=args.addr, server_name=args.server)
+
 
 if __name__ == '__main__':
     main()
