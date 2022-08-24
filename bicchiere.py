@@ -595,14 +595,10 @@ class Session(dict):
         self.save()
 
     def load(self) -> str:
-        return self.sid
+        return str(self)
 
     def save(self) -> str:
-        #d = dict()
-        #d[self.sid] = self
-        #j = json.dumps(d)
-        #print(f"Saving {d}")
-        return json.dumps(self)
+        return str(self)
 
     def get_store_dir(self) -> str:
         store_dir = os.path.join(os.getcwd(), Bicchiere.config['sessions_directory'])
@@ -622,6 +618,9 @@ class Session(dict):
             return value
         else:
             return ""
+
+    def __repr__(self) -> str:
+        return json.dumps(self)
 
     def __getattr__(self, __name: str):
         if __name in self:
@@ -794,7 +793,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 3, 0)
+    __version__ = (0, 3, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
