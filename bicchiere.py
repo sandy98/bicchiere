@@ -623,11 +623,14 @@ class Session(dict):
         return json.dumps(self)
 
     def __getattr__(self, __name: str):
-        if __name in self:
-            return self[__name]
-        else:
-            raise AttributeError(
-                f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
+        #if __name in self:
+        #    return self[__name]
+        #else:
+        #    raise AttributeError(f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
+        return self.get(__name)
+
+    def __hasattr__(self, __name):
+        return not not self.get(__name)
 
     # def __getattribute__(self, __name: str):
     #    return super().__getattribute__(__name)
@@ -793,7 +796,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 3, 1)
+    __version__ = (0, 3, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
