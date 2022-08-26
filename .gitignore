@@ -13,6 +13,9 @@ old*
 ._*
 *.*~
 
+bin/
+lib/
+pyvenv.cfg
 dist/
 build/
 MANIFEST
