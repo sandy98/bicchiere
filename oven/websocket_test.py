@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-os.sys.path.append(os.path.split(os.getcwd())[0])
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession
 from gevent.pywsgi import WSGIServer
@@ -74,7 +73,6 @@ def websocket_handler():
             break
 
 def main():
-    os.system("clear")
     server = WSGIServer(('0.0.0.0', 8088), app, handler_class=WebSocketHandler)
     try:
         print("Serving http and websockets at port 8088.")

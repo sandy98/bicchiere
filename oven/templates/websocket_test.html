@@ -56,14 +56,15 @@
         <form action="/logout" method="POST">
           <button type="submit">Logout</button>
         </form>
-      {%endif %}
-      {%if session.user|isnone %}
+      {# endif #}
+      {% else %}
+      {# if session.user|isnone #}
       <form action="/login" method="POST">
         <label for="txtuser">User:</label>
         <input type="text" id="txtuser" name="user" required />
         <button type="submit">Login</button>
       </form>
-      {%endif %}
+      {% endif %}
    </div>
    <hr>
    <div class="messages" id="msg_list"></div>

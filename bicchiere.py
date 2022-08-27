@@ -181,6 +181,20 @@ class TemplateLight:
                     ops_stack.append('if')
                     code.add_line("if {0}:".format(self._expr_code(words[1])))
                     code.indent()
+                elif words[0] == 'else':
+                    # An else statement: evaluate the expression to determine else.
+                    #print("Uso de 'else' en el template detectado.")
+                    if len(words) != 1:
+                        self._syntax_error("Don't understand else", token)
+                    if not ops_stack:
+                        self._syntax_error("'Else' without previous 'if'", token)
+                    start_what = ops_stack.pop()
+                    if (start_what != "if"):
+                        self._syntax_error("'Else' without previous 'if'", token)
+                    ops_stack.append('else')
+                    code.dedent()
+                    code.add_line("else:")
+                    code.indent()
                 elif words[0] == 'for':
                     # A loop: iterate over expression result.
                     if len(words) != 4 or words[2] != 'in':
@@ -202,7 +216,7 @@ class TemplateLight:
                     if not ops_stack:
                         self._syntax_error("Too many ends", token)
                     start_what = ops_stack.pop()
-                    if start_what != end_what:
+                    if (start_what != end_what) and (start_what != "else" or end_what != "if"):
                         self._syntax_error("Mismatched end tag", end_what)
                     code.dedent()
                 else:
@@ -796,7 +810,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 3, 9)
+    __version__ = (0, 4, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
