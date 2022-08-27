@@ -79,8 +79,8 @@ def main():
     time.sleep(1)   
     print("Updating git.")
     os.system("git add .")
+    os.system(f"git tag {version}")
     os.system(f"git commit -m'version {version} {commit_message}'")
-    os.system(f"git tag v{version}")
     os.system("git push")
 
     time.sleep(1)
