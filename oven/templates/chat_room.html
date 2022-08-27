@@ -10,6 +10,10 @@
   body {
     font-family: Helvetica, Arial;
     margin-left: 3%;
+    margin-right: 3%;
+  }
+  hr {
+    color: transparent;
   }
   .title {
     color: steelblue;
@@ -34,8 +38,9 @@
     min-height: 2em;
   }
   .statusline {
-    margin-right: 2em; 
-    margin-left: 2em; 
+    width: 95%;
+    max-width: 95%;
+    min-width: 95%;
     margin-top: 0.5em; 
     margin-bottom: 0.5em; 
     padding: 6px; 
@@ -48,7 +53,7 @@
  </style>    
 </head>
 <body>
-    <h1 class="title">Messages</h1>
+    <h1 class="title">Bicchiere Chat Room</h1>
     <hr>
     <div class="statusline">
       {%if session.user %}
@@ -69,20 +74,30 @@
    <hr>
    <div class="messages" id="msg_list"></div>
     <div class="renglon">
-        <input style="width: 100%; height: 1.8em;" type="text" id="txt_msg"s/>
+        <label for="txt_msg">Message:</label>
+        <input style="width: 80%; height: 1.8em;" type="text" id="txt_msg"/>
     </div>
+    
     <script>
+        var is_logged = {{ is_logged }};
         var txt_msg  = document.getElementById('txt_msg');
         var msg_list  = document.getElementById('msg_list');
         var ws = new WebSocket("ws://" + location.hostname + ":8088/messages")
         ws.onopen = function() {
-            ws.send(new Date().toISOString());
+            if (is_logged) {
+              ws.send("Logged in at " + new Date().toLocaleString());
+            }
         }
         txt_msg.addEventListener('keyup', function(ev) {
             if (ev.keyCode != 13) return false;
-            if (ev.target.value.length) ws.send(ev.target.value);
-            ev.target.value = "";
-            return true;
+            if (is_logged) {
+              if (ev.target.value.length) ws.send(ev.target.value);
+              ev.target.value = "";
+              return true;
+            } else {
+              alert("Must be logged in to send messages.");
+              return false;
+            }
         } )
         ws.onmessage = function(ev) {
             // alert(ev.data);

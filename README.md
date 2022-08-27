@@ -13,16 +13,18 @@ Following [Flask](https://flask.palletsprojects.com/en/2.1.x/) and [Bottle](http
 pip install bicchiere
 ```
 
-## [Project home page](https://bicchiere.eu.pythonanywhere.com "Project Home Page - Demo App")
+## [Project Demo App](https://bicchiere.eu.pythonanywhere.com)
 
-Current version: 0.4.0
+Current version: 0.4.1
 
 ## A drop from Bicchiere
 
 ```python
 from bicchiere import Bicchiere
 
-app = Bicchiere(__name__)
+app = Bicchiere()
+or
+app = Bicchiere("La mia bella App")
 
 @app.get("/")
 def home():

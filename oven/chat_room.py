@@ -4,10 +4,13 @@
 import os
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession
-from gevent.pywsgi import WSGIServer
-from geventwebsocket import WebSocketError, websocket
-from geventwebsocket.handler import WebSocketHandler
-
+try:
+    from gevent.pywsgi import WSGIServer
+    from geventwebsocket import WebSocketError, websocket
+    from geventwebsocket.handler import WebSocketHandler
+except:
+    print("You must do 'pip install gevent-websocket' prior to using this app")
+    os.sys.exit(1)
 
 def get_username(app):
     return app.session.user if app.session.user else "Guest-{}".format(datetime.now().microsecond)
@@ -38,7 +41,8 @@ app.register_template_filter("isnone", isnone)
 
 @app.get("/")
 def home():
-    return app.render_template("websocket_test.html", session = app.session)
+    return app.render_template("chat_room.html", 
+    session = app.session, is_logged = 1 if app.session.user else 0)
 
 @app.post("/logout")
 def logout():
