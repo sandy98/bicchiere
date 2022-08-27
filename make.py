@@ -81,7 +81,7 @@ def main():
     os.system("git add .")
     os.system(f"git tag {version}")
     os.system(f"git commit -m'version {version} {commit_message}'")
-    os.system("git push ==tags")
+    os.system("git push origin main --tags")
 
     time.sleep(1)
     print(f"Building of version {version} finished succesfully.")
