@@ -15,6 +15,7 @@ old*
 
 bin/
 lib/
+include/
 pyvenv.cfg
 dist/
 build/

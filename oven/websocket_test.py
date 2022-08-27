@@ -2,82 +2,19 @@
 # -*- coding: utf-8 -*-
 
 import os
+os.sys.path.append(os.path.split(os.getcwd())[0])
 from datetime import datetime
-from bicchiere import Bicchiere
+from bicchiere import Bicchiere, SqliteSession
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError, websocket
 from geventwebsocket.handler import WebSocketHandler
 
-html = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>WebSocket Test</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
-    <!--[if lt IE 9]><script src="js/html5shiv-printshiv.js" media="all"></script><![endif]-->
- <style>
-  body {
-    font-family: Helvetica, Arial;
-    margin-left: 3%;
-  }
-  .title {
-    color: steelblue;
-    text-align: center;
-  }
-  .messages {
-    width: 95%;
-    max-width: 95%;
-    min-width: 95%;
-    height: 15em;
-    max-height: 15em;
-    min-height: 15em;
-    padding: 5px;
-    border-radius: 4px;
-    border: solid 1px;
-    overflow: auto;
-    margin-bottom: 12px;
-  }
-  .renglon {
-    width: 95%;
-    height: 2em;
-    min-height: 2em;
-  }
- </style>    
-</head>
-<body>
-    <h1 class="title">Messages</h1>
-    <div class="messages" id="msg_list"></div>
-    <div class="renglon">
-        <input style="width: 100%; height: 1.8em;" type="text" id="txt_msg"s/>
-    </div>
-    <script>
-        var txt_msg  = document.getElementById('txt_msg');
-        var msg_list  = document.getElementById('msg_list');
-        var ws = new WebSocket("ws://savos.sytes.net:8088/messages")
-        ws.onopen = function() {
-            ws.send(new Date().toISOString());
-        }
-        txt_msg.addEventListener('keyup', function(ev) {
-            if (ev.keyCode != 13) return false;
-            if (ev.target.value.length) ws.send(ev.target.value);
-            ev.target.value = "";
-            return true;
-        } )
-        ws.onmessage = function(ev) {
-            // alert(ev.data);
-            var newdiv = document.createElement('div');
-            newdiv.innerHTML = ev.data;
-            msg_list.appendChild(newdiv);
-            msg_list.scrollTop = msg_list.scrollHeight;
-        }
-    </script>
-</body>
-</html>
-'''
 
-def get_username():
-    return "Guest-{}".format(datetime.now().microsecond)
+def get_username(app):
+    return app.session.user if app.session.user else "Guest-{}".format(datetime.now().microsecond)
+
+def isnone(obj):
+    return True if obj is None else False
 
 class UserSocket:
     def __init__(self, user, socket):
@@ -96,11 +33,26 @@ class UserSocket:
             return False
 
 app = Bicchiere()
+app.session_class = SqliteSession
 app.socks = set()
+app.register_template_filter("isnone", isnone)
 
 @app.get("/")
 def home():
-    return html
+    return app.render_template("websocket_test.html", session = app.session)
+
+@app.post("/logout")
+def logout():
+    del app.session.user
+    return app.redirect("/")
+
+@app.post("/login")
+def login():
+    if app.form['user'].value:
+        app.session.user = app.form['user'].value
+        return app.redirect("/")
+    else:
+        return app.redirect("/logout")
 
 @app.route('/messages')
 def websocket_handler():
@@ -109,7 +61,8 @@ def websocket_handler():
         print("No websocket found :-(")
         return "Merda!"
     if not wsock in app.socks:
-        wsock = UserSocket(get_username(), wsock)
+        wsock = UserSocket(get_username(app), wsock)
+        print(f"New socket added for user: {wsock.user}")
         app.socks.add(wsock)
     while True:
         try:
@@ -119,7 +72,22 @@ def websocket_handler():
         except WebSocketError:
             app.socks.remove(wsock)
             break
-if __name__ == '__main__':
+
+def main():
     os.system("clear")
     server = WSGIServer(('0.0.0.0', 8088), app, handler_class=WebSocketHandler)
-    server.serve_forever()
+    try:
+        print("Serving http and websockets at port 8088.")
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer exiting...")
+        if hasattr(server, "socket"):
+           server.socket.close()
+        if hasattr(server, "stop"):
+            print("Executing server stop.")
+            server.stop()
+
+
+if __name__ == '__main__':
+    main()
+
