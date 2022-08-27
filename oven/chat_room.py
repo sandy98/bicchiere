@@ -37,6 +37,7 @@ class UserSocket:
 app = Bicchiere()
 app.session_class = SqliteSession
 app.socks = set()
+app.msgs = []
 app.register_template_filter("isnone", isnone)
 
 @app.get("/")
@@ -59,6 +60,8 @@ def login():
 
 @app.route('/messages')
 def websocket_handler():
+    if not app.session.user:
+        return app.redirect("/")
     wsock = app.environ.get('wsgi.websocket')
     if not wsock:
         print("No websocket found :-(")
@@ -67,11 +70,16 @@ def websocket_handler():
         wsock = UserSocket(get_username(app), wsock)
         print(f"New socket added for user: {wsock.user}")
         app.socks.add(wsock)
+        for msg in app.msgs:
+            wsock.socket.send(msg)
     while True:
         try:
             msg = wsock.socket.receive()
-            for wsk in app.socks:
-                wsk.socket.send('<span style="color: green;">%s:&nbsp;&nbsp;&nbsp;</span><span>%s</span>' % (wsock.user, msg))
+            if msg and len(msg):
+                fmsg = '<span style="color: green;">%s:&nbsp;&nbsp;&nbsp;</span><span>%s</span>' % (wsock.user, msg)
+                app.msgs.append(fmsg)
+                for wsk in app.socks:
+                    wsk.socket.send(fmsg)
         except WebSocketError:
             app.socks.remove(wsock)
             break
