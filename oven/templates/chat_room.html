@@ -57,7 +57,7 @@
     <hr>
     <div class="statusline">
       {%if session.user %}
-        <span style="color: green; margin-right: 0.5em;">{{ session.user }}</span>
+        <span style="color: {{ session.usercolor }}; margin-right: 0.5em;">{{ session.user }}</span>
         <form action="/logout" method="POST">
           <button type="submit">Logout</button>
         </form>
@@ -67,6 +67,7 @@
       <form action="/login" method="POST">
         <label for="txtuser">User:</label>
         <input type="text" id="txtuser" name="user" required />
+        <input type="color" value="#008800" name="usercolor" />
         <button type="submit">Login</button>
       </form>
       {% endif %}
@@ -102,7 +103,7 @@
         ws.onmessage = function(ev) {
             // alert(ev.data);
             data = JSON.parse(ev.data);
-            var innerHTML = `<span style="color: green;">${data.user}:&nbsp;&nbsp;&nbsp;</span><span>${data.msg}</span>`
+            var innerHTML = `<span style="color: ${data.usercolor};">${data.user}:&nbsp;&nbsp;&nbsp;</span><span>${data.msg}</span>`
             var newdiv = document.createElement('div');
             newdiv.innerHTML = innerHTML;
             msg_list.appendChild(newdiv);

@@ -19,9 +19,10 @@ def isnone(obj):
     return True if obj is None else False
 
 class UserSocket:
-    def __init__(self, user, socket):
+    def __init__(self, user, socket, usercolor = "#008800"):
         self.user = user
         self.socket = socket
+        self.usercolor = usercolor
 
     def __hash__(self):
         return hash(self.socket)
@@ -54,6 +55,7 @@ def logout():
 def login():
     if app.form['user'].value:
         app.session.user = app.form['user'].value
+        app.session.usercolor = app.form['usercolor'].value
         return app.redirect("/")
     else:
         return app.redirect("/logout")
@@ -67,7 +69,7 @@ def websocket_handler():
         print("No websocket found :-(")
         return "Merda!"
     if not wsock in app.socks:
-        wsock = UserSocket(get_username(app), wsock)
+        wsock = UserSocket(get_username(app), wsock, usercolor = app.session.usercolor or "#008800")
         print(f"New socket added for user: {wsock.user}")
         app.socks.add(wsock)
         for msg in app.msgs:
@@ -76,8 +78,7 @@ def websocket_handler():
         try:
             msg = wsock.socket.receive()
             if msg and len(msg):
-                #fmsg = '<span style="color: green;">%s:&nbsp;&nbsp;&nbsp;</span><span>%s</span>' % (wsock.user, msg)
-                fmsg = json.dumps(dict(user = wsock.user, msg = msg))
+                fmsg = json.dumps(dict(user = wsock.user, msg = msg, usercolor = wsock.usercolor))
                 app.msgs.append(fmsg)
                 for wsk in app.socks:
                     wsk.socket.send(fmsg)
