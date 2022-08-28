@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
+import os, json
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession
 try:
@@ -76,7 +76,8 @@ def websocket_handler():
         try:
             msg = wsock.socket.receive()
             if msg and len(msg):
-                fmsg = '<span style="color: green;">%s:&nbsp;&nbsp;&nbsp;</span><span>%s</span>' % (wsock.user, msg)
+                #fmsg = '<span style="color: green;">%s:&nbsp;&nbsp;&nbsp;</span><span>%s</span>' % (wsock.user, msg)
+                fmsg = json.dumps(dict(user = wsock.user, msg = msg))
                 app.msgs.append(fmsg)
                 for wsk in app.socks:
                     wsk.socket.send(fmsg)

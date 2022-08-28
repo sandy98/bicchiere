@@ -101,8 +101,10 @@
         } )
         ws.onmessage = function(ev) {
             // alert(ev.data);
+            data = JSON.parse(ev.data);
+            var innerHTML = `<span style="color: green;">${data.user}:&nbsp;&nbsp;&nbsp;</span><span>${data.msg}</span>`
             var newdiv = document.createElement('div');
-            newdiv.innerHTML = ev.data;
+            newdiv.innerHTML = innerHTML;
             msg_list.appendChild(newdiv);
             msg_list.scrollTop = msg_list.scrollHeight;
         }
