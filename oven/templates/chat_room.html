@@ -82,7 +82,7 @@
         var is_logged = {{ is_logged }};
         var txt_msg  = document.getElementById('txt_msg');
         var msg_list  = document.getElementById('msg_list');
-        var ws = new WebSocket("ws://" + location.hostname + ":8088/messages")
+        var ws = new WebSocket(location.protocol == "https:" ? "wss" : "ws" + "://" + location.hostname + ":8088/messages")
         ws.onopen = function() {
             if (is_logged) {
               ws.send("Logged in at " + new Date().toLocaleString());
