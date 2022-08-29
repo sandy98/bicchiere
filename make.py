@@ -81,6 +81,7 @@ def main():
     stages.append("cd oven")
     stages.append(". bin/activate")
     stages.append("pip install --upgrade bicchiere")
+    stages.append("pip freeze > requirements.txt")
     stages.append("deactivate")
     stages.append("cd ..")
     command = " && ".join(stages)
