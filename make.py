@@ -72,7 +72,7 @@ def upgrade_oven():
 
 def update_git():
     time.sleep(1)
-    print("Updating git.")
+    print("\nUpdating git.")
     os.system("git add .")
     os.system(f"git tag {version}")
     os.system(f"git commit -m'version {version} {commit_message}'")
