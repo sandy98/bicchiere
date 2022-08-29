@@ -12,6 +12,124 @@ except:
     print("You must do 'pip install gevent-websocket' prior to using this app")
     os.sys.exit(1)
 
+html = """
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>WebSocket Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <!--[if lt IE 9]><script src="js/html5shiv-printshiv.js" media="all"></script><![endif]-->
+ <style>
+  body {
+    font-family: Helvetica, Arial;
+    margin-left: 3%;
+    margin-right: 3%;
+  }
+  hr {
+    color: transparent;
+  }
+  .title {
+    color: steelblue;
+    text-align: center;
+  }
+  .messages {
+    width: 95%;
+    max-width: 95%;
+    min-width: 95%;
+    height: 15em;
+    max-height: 15em;
+    min-height: 15em;
+    padding: 5px;
+    border-radius: 4px;
+    border: solid 1px;
+    overflow: auto;
+    margin-bottom: 12px;
+  }
+  .renglon {
+    width: 95%;
+    height: 2em;
+    min-height: 2em;
+  }
+  .statusline {
+    width: 95%;
+    max-width: 95%;
+    min-width: 95%;
+    margin-top: 0.5em; 
+    margin-bottom: 0.5em; 
+    padding: 6px; 
+    border:solid 1px; 
+    border-radius: 3px; 
+    display: flex; flex-direction: row; 
+    align-items: center; 
+    justify-content: flex-end;
+  }
+ </style>    
+</head>
+<body>
+    <h1 class="title">Bicchiere Chat Room</h1>
+    <hr>
+    <div class="statusline">
+      {%if session.user %}
+        <span style="color: {{ session.usercolor }}; margin-right: 0.5em;">{{ session.user }}</span>
+        <form action="/logout" method="POST">
+          <button type="submit">Logout</button>
+        </form>
+      {# endif #}
+      {% else %}
+      {# if session.user|isnone #}
+      <form action="/login" method="POST">
+        <label for="txtuser">User:</label>
+        <input type="text" id="txtuser" name="user" required />
+        <input type="color" value="#008800" name="usercolor" />
+        <button type="submit">Login</button>
+      </form>
+      {% endif %}
+   </div>
+   <hr>
+   <div class="messages" id="msg_list"></div>
+    <div class="renglon">
+        <label for="txt_msg">Message:</label>
+        <input style="width: 80%; height: 1.8em;" type="text" id="txt_msg"/>
+    </div>
+    
+    <script>
+        var is_logged = {{ is_logged }};
+        var txt_msg  = document.getElementById('txt_msg');
+        var msg_list  = document.getElementById('msg_list');
+        var ws = new WebSocket(location.protocol == "https:" ? "wss" : "ws" + "://" + location.hostname + ":8088/messages")
+        ws.onopen = function() {
+            if (is_logged) {
+              ws.send("Logged in at " + new Date().toLocaleString());
+            }
+        }
+        txt_msg.addEventListener('keyup', function(ev) {
+            if (ev.keyCode != 13) return false;
+            if (is_logged) {
+              if (ev.target.value.length) ws.send(ev.target.value);
+              ev.target.value = "";
+              return true;
+            } else {
+              alert("Must be logged in to send messages.");
+              return false;
+            }
+        } )
+        ws.onmessage = function(ev) {
+            // alert(ev.data);
+            data = JSON.parse(ev.data);
+            var innerHTML = `<span style="color: ${data.usercolor};">${data.user}:&nbsp;&nbsp;&nbsp;</span><span>${data.msg}</span>`
+            var newdiv = document.createElement('div');
+            newdiv.innerHTML = innerHTML;
+            msg_list.appendChild(newdiv);
+            msg_list.scrollTop = msg_list.scrollHeight;
+        }
+    </script>
+</body>
+</html>
+
+"""
+
 def get_username(app):
     return app.session.user if app.session.user else "Guest-{}".format(datetime.now().microsecond)
 
@@ -43,8 +161,7 @@ app.register_template_filter("isnone", isnone)
 
 @app.get("/")
 def home():
-    return app.render_template("chat_room.html", 
-    session = app.session, is_logged = 1 if app.session.user else 0)
+    return app.render_template(html, session = app.session, is_logged = 1 if app.session.user else 0)
 
 @app.post("/logout")
 def logout():

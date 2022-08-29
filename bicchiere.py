@@ -810,7 +810,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 4, 6)
+    __version__ = (0, 4, 7)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2351,7 +2351,7 @@ class Bicchiere(BicchiereMiddleware):
                     print("Server chiuso.\n")
                 except:
                     pass
-            print("\nBicchiere ha finito il suo compito.\n")
+            print("\nBicchiere  e finito.\n")
 
 # End main Bicchiere App class
 
@@ -2377,7 +2377,7 @@ def run(host='localhost', port=8086, app=application, server_name='wsgiref'):
 # Provervial main function
 
 def main():
-    "Executes demo app"
+    "Executes demo app or, alternatively, return current version."
 
     import argparse
     parser = argparse.ArgumentParser(
@@ -2388,9 +2388,14 @@ def main():
                         default="127.0.0.1", help="Server address.")
     parser.add_argument('-s', '--server', type=str, default="wsgiref",
                         help="Server software.", choices=Bicchiere.known_servers)
+    parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version")
+
     args = parser.parse_args()
 
     os.system("clear")
+    if args.version:
+        print(f"Bicchiere version {application.version}")
+        return
     run(port=args.port, host=args.addr, server_name=args.server)
 
 

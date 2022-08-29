@@ -77,6 +77,17 @@ def main():
     os.system("rm src/LICENSE")
 
     time.sleep(1)   
+    print("Updating installed version in oven directory.")
+    stages = []
+    stages.append("cd oven")
+    stages.append("source bin/activate")
+    stages.append("pip install --upgrade bicchiere")
+    stages.append("deactivate")
+    stages.append("cd ..")
+    command = " && ".join(stages)
+    os.system(command)
+
+    time.sleep(1)   
     print("Updating git.")
     os.system("git add .")
     os.system(f"git tag {version}")
