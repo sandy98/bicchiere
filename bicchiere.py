@@ -633,9 +633,12 @@ class Session(SuperDict):
             self.save()
 
     def __del__(self):
-        print("Saving session prior to deletion")
-        self.save()
-        
+        "Tries to save session prior to deletion"
+        try:
+            self.save()
+        except:
+            pass
+
     def set_sid(self):
         self.sid = self.encrypt()
         self.save()
@@ -657,41 +660,16 @@ class Session(SuperDict):
             return ""
         return os.path.join(self.get_store_dir(), self.sid)
 
-    # def __getattr__(self, __name: str):
-    #     #if __name in self:
-    #     #    return self[__name]
-    #     #else:
-    #     #    raise AttributeError(f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
-    #     return self.get(__name)
-
-    # def __hasattr__(self, __name):
-    #     return not not self.get(__name)
-
-    # # def __getattribute__(self, __name: str):
-    # #    return super().__getattribute__(__name)
-
-    # def __setitem__(self, __k: str, __v) -> str:
-    #     super().__setitem__(__k, __v)
+    def __setitem__(self, __k: str, __v) -> str:
+        super().__setitem__(__k, __v)
     #     if __k == "sid":
     #         return json.dumps(self)
-    #     return self.save()
+        return self.save()
 
-    # def __delitem__(self, __k: str) -> str:
-    #     super().__delitem__(__k)
-    #     return self.save()
+    def __delitem__(self, __k: str) -> str:
+        super().__delitem__(__k)
+        return self.save()
 
-    # def __setattr__(self, __name: str, __value) -> str:
-    #     if __name.startswith('_') is False:
-    #         return self.__setitem__(__name, __value)
-    #     else:
-    #         super().__setattr__(__name, __value)
-    #         return ""
-
-    # def __delattr__(self, __name: str) -> str:
-    #     if self.get(__name):
-    #         return self.__delitem__(__name)
-    #     else:
-    #         return ""
 
 
 class FileSession(Session):
@@ -831,7 +809,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 5, 6)
+    __version__ = (0, 5, 7)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
