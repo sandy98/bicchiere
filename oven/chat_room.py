@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import activate
 import os, json
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession

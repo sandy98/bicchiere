@@ -571,13 +571,41 @@ class BicchiereMiddleware:
             self.debug(
                 f"{self.name} was meant as middleware, therefore it will not run stand alone")
 
-
 # End of middleware
 
 # Session handling support classes
 
+class SuperDict(dict):
+    def __getattr__(self, attr):
+        return super().get(attr)
+ 
+    def __setattr__(self, attr, val):
+        super().__setitem__(attr, val)
 
-class Session(dict):
+    def __delattr__(self, attr):
+        if super().get(attr):
+            super().__delitem__(attr)
+
+    def __getitem__(self, key):
+        return super().get(key)
+
+    def __delitem__(self, key):
+        if super().get(key):
+            super().__delitem__(key)
+
+    def __repr__(self) -> str:
+        return json.dumps(self)
+
+    def pop(self, __name: str):
+        value = super().get(__name)
+        if value:
+            super().__delitem__(__name)
+            return value
+        else:
+            return None
+
+
+class Session(SuperDict):
     """Session handling base class"""
 
     secret = None
@@ -601,9 +629,13 @@ class Session(dict):
         else:
             self.set_sid()
         if kw:
-            self.update(**kw)
+            super().update(**kw)
             self.save()
 
+    def __del__(self):
+        print("Saving session prior to deletion")
+        self.save()
+        
     def set_sid(self):
         self.sid = self.encrypt()
         self.save()
@@ -625,52 +657,41 @@ class Session(dict):
             return ""
         return os.path.join(self.get_store_dir(), self.sid)
 
-    def pop(self, __name: str) -> str:
-        value = self.get(__name)
-        if value:
-            self.__delitem__(__name)
-            return value
-        else:
-            return ""
+    # def __getattr__(self, __name: str):
+    #     #if __name in self:
+    #     #    return self[__name]
+    #     #else:
+    #     #    raise AttributeError(f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
+    #     return self.get(__name)
 
-    def __repr__(self) -> str:
-        return json.dumps(self)
+    # def __hasattr__(self, __name):
+    #     return not not self.get(__name)
 
-    def __getattr__(self, __name: str):
-        #if __name in self:
-        #    return self[__name]
-        #else:
-        #    raise AttributeError(f"getattr informs that {self.__class__.__name__} object has no attribute '{__name}'")
-        return self.get(__name)
+    # # def __getattribute__(self, __name: str):
+    # #    return super().__getattribute__(__name)
 
-    def __hasattr__(self, __name):
-        return not not self.get(__name)
+    # def __setitem__(self, __k: str, __v) -> str:
+    #     super().__setitem__(__k, __v)
+    #     if __k == "sid":
+    #         return json.dumps(self)
+    #     return self.save()
 
-    # def __getattribute__(self, __name: str):
-    #    return super().__getattribute__(__name)
+    # def __delitem__(self, __k: str) -> str:
+    #     super().__delitem__(__k)
+    #     return self.save()
 
-    def __setitem__(self, __k: str, __v) -> str:
-        super().__setitem__(__k, __v)
-        if __k == "sid":
-            return json.dumps(self)
-        return self.save()
+    # def __setattr__(self, __name: str, __value) -> str:
+    #     if __name.startswith('_') is False:
+    #         return self.__setitem__(__name, __value)
+    #     else:
+    #         super().__setattr__(__name, __value)
+    #         return ""
 
-    def __delitem__(self, __k: str) -> str:
-        super().__delitem__(__k)
-        return self.save()
-
-    def __setattr__(self, __name: str, __value) -> str:
-        if __name.startswith('_') is False:
-            return self.__setitem__(__name, __value)
-        else:
-            super().__setattr__(__name, __value)
-            return ""
-
-    def __delattr__(self, __name: str) -> str:
-        if self.get(__name):
-            return self.__delitem__(__name)
-        else:
-            return ""
+    # def __delattr__(self, __name: str) -> str:
+    #     if self.get(__name):
+    #         return self.__delitem__(__name)
+    #     else:
+    #         return ""
 
 
 class FileSession(Session):
@@ -810,7 +831,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 5, 5)
+    __version__ = (0, 5, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
