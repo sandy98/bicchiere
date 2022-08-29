@@ -94,26 +94,24 @@ def main():
         return usage()
     major, minor, revision = args[:3]
     commit_message = args[3] if len(args) > 3 else ""
+
+    from bicchiere import Bicchiere
+    omajor, ominor, orevision = Bicchiere.__version__
+    oversion = f"{omajor}.{ominor}.{orevision}"
+    version = f"{major}.{minor}.{revision}"
+
     if commit_message == "--upgrade":
         upgrade_oven()
         update_git()
         return 0
 
-    print(
-        f"\nAttemping to build bicchiere version: {major}.{minor}.{revision}\n")
-
-    from bicchiere import Bicchiere
-    omajor, ominor, orevision = Bicchiere.__version__
+    print(f"\nAttemping to build bicchiere version: {major}.{minor}.{revision}\n")
     print(f"\nCurrent bicchiere version: {omajor}.{ominor}.{orevision}\n")
-
-    oversion = f"{omajor}.{ominor}.{orevision}"
-    version = f"{major}.{minor}.{revision}"
 
     if oversion == version:
         print("One of major, minor or revision must differ from existing in order to proceed.\nAborting build.\n")
         return -2
 
-    time.sleep(1)
     print(f"\nBuilding bicchiere from {oversion} to {version}\n")
 
     tasks = [cleaning_src,
