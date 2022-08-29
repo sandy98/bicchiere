@@ -76,6 +76,13 @@ def main():
     os.system("rm src/README.md")
     os.system("rm src/LICENSE")
 
+    time.sleep(1)   
+    print("Updating git.")
+    os.system("git add .")
+    os.system(f"git tag {version}")
+    os.system(f"git commit -m'version {version} {commit_message}'")
+    os.system("git push origin main --tags")
+
     time.sleep(3)   
     stages = []
     stages.append("cd oven")
@@ -87,13 +94,6 @@ def main():
     command = " && ".join(stages)
     print(f"Executing '{command}'")
     os.system(command)
-
-    time.sleep(1)   
-    print("Updating git.")
-    os.system("git add .")
-    os.system(f"git tag {version}")
-    os.system(f"git commit -m'version {version} {commit_message}'")
-    os.system("git push origin main --tags")
 
     time.sleep(1)
     print(f"Building of version {version} finished succesfully.")
