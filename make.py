@@ -76,7 +76,7 @@ def main():
     os.system("rm src/README.md")
     os.system("rm src/LICENSE")
 
-    time.sleep(1)   
+    time.sleep(3)   
     stages = []
     stages.append("cd oven")
     stages.append(". bin/activate")
