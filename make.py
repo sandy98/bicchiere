@@ -80,7 +80,7 @@ def main():
     stages = []
     stages.append("cd oven")
     stages.append(". bin/activate")
-    stages.append("pip install --upgrade bicchiere")
+    stages.append(f"pip install bicchiere {version}")
     stages.append("pip freeze > requirements.txt")
     stages.append("deactivate")
     stages.append("cd ..")
