@@ -6,7 +6,7 @@ import os
 import time
 
 def usage():
-    print("Usage: build_bicchiere.py 'major' 'minor' 'revision'")
+    print("\nUsage: build_bicchiere.py 'major' 'minor' 'revision'\n")
     return -1
 
 def main():
@@ -22,11 +22,11 @@ def main():
     major, minor, revision = args[:3]
     commit_message = args[3] if len(args) > 3 else ""
 
-    print(f"Attemping to build bicchiere version: {major}.{minor}.{revision}")
+    print(f"\nAttemping to build bicchiere version: {major}.{minor}.{revision}\n")
 
     from bicchiere import Bicchiere
     omajor, ominor, orevision = Bicchiere.__version__
-    print(f"Current bicchiere version: {omajor}.{ominor}.{orevision}")
+    print(f"\nCurrent bicchiere version: {omajor}.{ominor}.{orevision}")
 
     oversion = f"{omajor}.{ominor}.{orevision}"
     version = f"{major}.{minor}.{revision}"
@@ -36,7 +36,7 @@ def main():
         return -2
 
     time.sleep(1)
-    print(f"Building bicchiere from {oversion} to {version}")
+    print(f"\nBuilding bicchiere from {oversion} to {version}")
 
     time.sleep(1) 
     print("Cleaning src directory")
@@ -76,6 +76,18 @@ def main():
     os.system("rm src/README.md")
     os.system("rm src/LICENSE")
 
+    time.sleep(3)   
+    stages = []
+    stages.append("cd oven")
+    stages.append(". bin/activate")
+    stages.append(f"pip install bicchiere --upgrade")
+    stages.append("pip freeze > requirements.txt")
+    stages.append("deactivate")
+    stages.append("cd ..")
+    command = " && ".join(stages)
+    print(f"\nExecuting '{command}'")
+    os.system(command)
+
     time.sleep(1)   
     print("Updating git.")
     os.system("git add .")
@@ -83,20 +95,8 @@ def main():
     os.system(f"git commit -m'version {version} {commit_message}'")
     os.system("git push origin main --tags")
 
-    time.sleep(3)   
-    stages = []
-    stages.append("cd oven")
-    stages.append(". bin/activate")
-    stages.append(f"pip install bicchiere {version}")
-    stages.append("pip freeze > requirements.txt")
-    stages.append("deactivate")
-    stages.append("cd ..")
-    command = " && ".join(stages)
-    print(f"Executing '{command}'")
-    os.system(command)
-
     time.sleep(1)
-    print(f"Building of version {version} finished succesfully.")
+    print(f"\nBuilding of version {version} finished succesfully.")
     return 0
 
 if __name__ == "__main__":
