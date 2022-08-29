@@ -96,6 +96,7 @@ def main():
     commit_message = args[3] if len(args) > 3 else ""
     if commit_message == "--upgrade":
         upgrade_oven()
+        update_git()
         return 0
 
     print(
