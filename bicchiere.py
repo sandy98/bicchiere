@@ -810,7 +810,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 4, 7)
+    __version__ = (0, 4, 8)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2351,7 +2351,7 @@ class Bicchiere(BicchiereMiddleware):
                     print("Server chiuso.\n")
                 except:
                     pass
-            print("\nBicchiere  e finito.\n")
+            print("\nBicchiere  è finito.\n")
 
 # End main Bicchiere App class
 
@@ -2392,10 +2392,11 @@ def main():
 
     args = parser.parse_args()
 
-    os.system("clear")
     if args.version:
-        print(f"Bicchiere version {application.version}")
+        print(f"\nBicchiere version {application.version}\n")
         return
+
+    os.system("clear")
     run(port=args.port, host=args.addr, server_name=args.server)
 
 
