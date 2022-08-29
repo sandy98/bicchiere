@@ -810,7 +810,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 5, 3)
+    __version__ = (0, 5, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
