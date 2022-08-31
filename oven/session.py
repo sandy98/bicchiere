@@ -17,11 +17,11 @@ class SuperDict(dict):
         return super().get(attr)
  
     def __setattr__(self, attr, val):
-        super().__setitem__(attr, val)
+        self.__setitem__(attr, val)
 
     def __delattr__(self, attr):
-        if super().get(attr):
-            super().__delitem__(attr)
+        if self.get(attr):
+            self.__delitem__(attr)
 
     def __getitem__(self, key):
         return super().get(key)
@@ -78,7 +78,7 @@ class Session(SuperDict):
 
     def set_sid(self):
         self.sid = self.encrypt()
-        self.save()
+        #self.save()
 
     def load(self) -> str:
         return str(self)
@@ -87,7 +87,7 @@ class Session(SuperDict):
         return str(self)
 
     def get_store_dir(self) -> str:
-        store_dir = os.path.join(os.getcwd(), Bicchiere.config['sessions_directory'])
+        store_dir = os.path.join(os.getcwd(), 'bicchiere_sessions')
         if os.path.exists(store_dir) is False:
             os.mkdir(store_dir)
         return store_dir
@@ -101,9 +101,14 @@ class Session(SuperDict):
         super().__setitem__(__k, __v)
     #     if __k == "sid":
     #         return json.dumps(self)
-        return self.save()
+        if __k == "sid":
+            return __v
+        else:
+            return self.save()
 
     def __delitem__(self, __k: str) -> str:
+        if __k == "sid":
+            return
         super().__delitem__(__k)
         return self.save()
 
@@ -243,8 +248,12 @@ def main():
                      username="sandy", age=68)
     print("\n", s, "\n")
 
-    s2 = FileSession(
-        '9a3163d6079203ca73584e8e6d68103d2e9065d430194f42321ac6481f13e589', foe="Flamengo")
+
+    s2 = FileSession(s.sid, foe="Flamengo")
+
+    del s
+
+    s = None
 
     print("\n", s2, "\n")
 
