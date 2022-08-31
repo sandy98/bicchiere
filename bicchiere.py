@@ -529,50 +529,6 @@ class MenuBuilder:
 
 # End of templates related code
 
-
-# Middleware
-
-class BicchiereMiddleware:
-    def __init__(self, application=None):
-        self.application = application
-        self.name = self.__class__.__name__
-
-    def __call__(self, environ, start_response):
-        self.environ = environ
-        self.start_response = start_response
-
-        self.environ["wsgi_middleware"] = str(self)
-
-        if self.application:
-            return self.application(environ, start_response)
-        else:
-            start_response(
-                "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
-            yield str(self).encode("utf-8")
-            return b""
-
-    def __str__(self):
-        return f"{self.__class__.__name__} v. {Bicchiere.get_version()}"
-
-    @property
-    def last_handler(self):
-        lh = self.application if hasattr(
-            self, "application") and Bicchiere.is_callable(self.application) else self
-
-        while hasattr(lh, "application") and Bicchiere.is_callable(lh.application):
-            lh = lh.application
-
-        return lh or self
-
-    def run(self, *args, **kwargs):
-        if self.application:
-            return self.application.run(*args, **kwargs)
-        else:
-            self.debug(
-                f"{self.name} was meant as middleware, therefore it will not run stand alone")
-
-# End of middleware
-
 # Session handling support classes
 
 class SuperDict(dict):
@@ -793,17 +749,71 @@ class SqliteSession(Session):
 
 # Miscelaneous configuration options
 
-default_config = {
+default_config = SuperDict({
     'debug': True,
-    'session_class': Session,
+    'session_class': FileSession,
     'sessions_directory': 'bicchiere_sessions',
     'static_directory': 'static',
     'templates_directory': 'templates',
     'allow_directory_listing': False,
     'pre_load_default_filters': True
-}
+})
 
 # End of miscelaneous configuration options
+
+
+# Middleware
+
+class BicchiereMiddleware:
+    "Base class for everything Bicchiere"
+    
+    __version__ = (0, 6, 4)
+    __author__ = "Domingo E. Savoretti"
+    config = default_config
+    template_filters = {}
+    known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
+    known_asgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
+    bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
+
+    def __init__(self, application=None):
+        self.application = application
+        self.name = self.__class__.__name__
+
+    def __call__(self, environ, start_response):
+        self.environ = environ
+        self.start_response = start_response
+
+        self.environ["wsgi_middleware"] = str(self)
+
+        if self.application:
+            return self.application(environ, start_response)
+        else:
+            start_response(
+                "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
+            yield str(self).encode("utf-8")
+            return b""
+
+    def __str__(self):
+        return f"{self.__class__.__name__} v. {Bicchiere.get_version()}"
+
+    @property
+    def last_handler(self):
+        lh = self.application if hasattr(
+            self, "application") and Bicchiere.is_callable(self.application) else self
+
+        while hasattr(lh, "application") and Bicchiere.is_callable(lh.application):
+            lh = lh.application
+
+        return lh or self
+
+    def run(self, *args, **kwargs):
+        if self.application:
+            return self.application.run(*args, **kwargs)
+        else:
+            self.debug(
+                f"{self.name} was meant as middleware, therefore it will not run stand alone")
+
+# End of middleware
 
 
 # Main Bicchiere App class
@@ -812,13 +822,6 @@ class Bicchiere(BicchiereMiddleware):
     """
     Main WSGI application class
     """
-
-    __version__ = (0, 6, 3)
-    __author__ = "Domingo E. Savoretti"
-    config = default_config
-    template_filters = {}
-    known_servers = ['gunicorn', 'bjoern', 'wsgiref']
-    bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
 
     def __init__(self, name=None, **kwargs):
         "Prepares Bicchiere instance to run"
@@ -2287,7 +2290,7 @@ class Bicchiere(BicchiereMiddleware):
         orig_server_name = server_name
         server_name = server_name.lower()
 
-        if server_name not in self.known_servers:
+        if server_name not in self.known_wsgi_servers:
             self.debug(
                 f"Server '{orig_server_name}' not known as of now. Switching to built-in WsgiRef")
             server_name = 'wsgiref'
@@ -2390,7 +2393,7 @@ def main():
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
     parser.add_argument('-s', '--server', type=str, default="wsgiref",
-                        help="Server software.", choices=Bicchiere.known_servers)
+                        help="Server software.", choices=Bicchiere.known_wsgi_servers)
     parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version")
 
     args = parser.parse_args()
