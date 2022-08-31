@@ -576,15 +576,17 @@ class BicchiereMiddleware:
 # Session handling support classes
 
 class SuperDict(dict):
+    "Dictionary that makes no difference between items and attributes"
+
     def __getattr__(self, attr):
         return super().get(attr)
  
     def __setattr__(self, attr, val):
-        super().__setitem__(attr, val)
+        self.__setitem__(attr, val)
 
     def __delattr__(self, attr):
-        if super().get(attr):
-            super().__delitem__(attr)
+        if self.get(attr):
+            self.__delitem__(attr)
 
     def __getitem__(self, key):
         return super().get(key)
@@ -662,14 +664,16 @@ class Session(SuperDict):
 
     def __setitem__(self, __k: str, __v) -> str:
         super().__setitem__(__k, __v)
-    #     if __k == "sid":
-    #         return json.dumps(self)
-        return self.save()
+        if __k == "sid":
+            return __v
+        else:
+            return self.save()
 
     def __delitem__(self, __k: str) -> str:
+        if __k == "sid":
+            return
         super().__delitem__(__k)
         return self.save()
-
 
 
 class FileSession(Session):
@@ -809,7 +813,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 5, 9)
+    __version__ = (0, 6, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
