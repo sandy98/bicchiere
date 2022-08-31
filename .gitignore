@@ -21,6 +21,6 @@ dist/
 build/
 MANIFEST
 bicchiere.egg-info/
-.vscode/
+*vscode/
 
 
