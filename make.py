@@ -4,6 +4,12 @@
 import os
 import time
 
+try:
+    from bicchiere import Bicchiere
+except:
+    print("Bicchiere can't be imported, so operation can't proceed.\nStop.")
+    os.sys.exit(-1)
+
 def usage():
     "Prints usage message in case parameters provided are incorrect"
     print("\nUsage: build_bicchiere.py 'major' 'minor' 'revision'\n")
@@ -78,27 +84,44 @@ def update_git():
     os.system(f"git commit -m'version {version} {commit_message}'")
     os.system("git push origin main --tags")
 
+tasks = [cleaning_src,
+            update_version,
+            copy_files_src,
+            build_dist,
+            upload_pypi,
+            clean_src,
+            upgrade_oven,
+            update_git
+        ]
+
+def init_vars():
+    global args, major, minor, revision, commit_message
+    global omajor, ominor, orevision
+    global oversion, version
+
+    args = os.sys.argv[1:]
+    if len(args) < 3:
+        usage()
+        return False
+
+    major, minor, revision = args[:3]
+    commit_message = args[3] if len(args) > 3 else ""
+
+    omajor, ominor, orevision = Bicchiere.__version__
+    oversion = f"{omajor}.{ominor}.{orevision}"
+    version = f"{major}.{minor}.{revision}"
+
+    return True
+
 def main():
     """
     Auxiliary tool that updates version, builds packages, uploads them to Pypi and updates github repo.
     """
 
-    global args, major, minor, revision, commit_message
-    global omajor, ominor, orevision
-    global oversion, version
-
     os.system("clear")
 
-    args = os.sys.argv[1:]
-    if len(args) < 3:
-        return usage()
-    major, minor, revision = args[:3]
-    commit_message = args[3] if len(args) > 3 else ""
-
-    from bicchiere import Bicchiere
-    omajor, ominor, orevision = Bicchiere.__version__
-    oversion = f"{omajor}.{ominor}.{orevision}"
-    version = f"{major}.{minor}.{revision}"
+    if not init_vars():
+        os.sys.exit(-1)
 
     if commit_message == "--upgrade":
         upgrade_oven()
@@ -113,16 +136,6 @@ def main():
         return -2
 
     print(f"\nBuilding bicchiere from {oversion} to {version}\n")
-
-    tasks = [cleaning_src,
-             update_version,
-             copy_files_src,
-             build_dist,
-             upload_pypi,
-             clean_src,
-             upgrade_oven,
-             update_git
-             ]
 
     for task in tasks:
         task()
