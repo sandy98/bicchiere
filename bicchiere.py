@@ -813,7 +813,7 @@ class Bicchiere(BicchiereMiddleware):
     Main WSGI application class
     """
 
-    __version__ = (0, 6, 2)
+    __version__ = (0, 6, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1281,7 +1281,7 @@ class Bicchiere(BicchiereMiddleware):
             self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
             for i in range(len(response)):
-                yield self.tob(response[i])
+                yield self.tobytes(response[i])
             self.clear_headers()
             return b''
 
@@ -1344,7 +1344,7 @@ class Bicchiere(BicchiereMiddleware):
             self.start_response(status_msg, self.headers.items())
 
         if response:
-            response = self.tob(response)
+            response = self.tobytes(response)
             self.debug(f"\n\nRESPONSE: '{response[ : 30].decode('utf-8')}...'")
             yield response
         else:
@@ -1382,7 +1382,7 @@ class Bicchiere(BicchiereMiddleware):
             return {}
 
     @staticmethod
-    def tob(s):
+    def tobytes(s):
         retval = None
         if not hasattr(s, '__iter__'):
             #print("Not an iterable, returning an empty bytes string")
