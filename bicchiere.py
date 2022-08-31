@@ -671,7 +671,7 @@ class SqliteSession(Session):
                 "CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY, data TEXT);")
             conn.commit()
         except Exception as exc:
-            print(
+            Bicchiere.debug(
                 f"Error creating table 'sessions' due to: {str(exc)}\nQuitting...")
             os.sys.exit(1)
         finally:
@@ -690,7 +690,7 @@ class SqliteSession(Session):
                 "select count(*) from sessions where sid = ?;", (self.sid, ))
             result = not not cursor.fetchone()[0]
         except Exception as exc:
-            print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+            Bicchiere.debug(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
         finally:
             cursor.close()
             conn.close()
@@ -713,7 +713,7 @@ class SqliteSession(Session):
                     for k in old_self:
                         self[k] = old_self[k]
                 except Exception as exc:
-                    print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+                    Bicchiere.debug(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
                 finally:
                     cursor.close()
                     conn.close()
@@ -738,7 +738,7 @@ class SqliteSession(Session):
                     "insert into sessions (sid, data) values (?, ?);", (self.sid, json.dumps(self)))
             conn.commit()
         except Exception as exc:
-            print(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
+            Bicchiere.debug(f"Exception '{exc.__class__.__name__}': {repr(exc)}")
         finally:
             cursor.close()
             conn.close()
@@ -750,7 +750,7 @@ class SqliteSession(Session):
 # Miscelaneous configuration options
 
 default_config = SuperDict({
-    'debug': True,
+    'debug': False,
     'session_class': FileSession,
     'sessions_directory': 'bicchiere_sessions',
     'static_directory': 'static',
@@ -766,13 +766,13 @@ default_config = SuperDict({
 
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
-    
-    __version__ = (0, 6, 5)
+
+    __version__ = (0, 6, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
     known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
-    known_asgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
+    known_asgi_servers = ['uvicorn']
     bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
 
     def __init__(self, application=None):
@@ -865,8 +865,7 @@ class Bicchiere(BicchiereMiddleware):
 
     def set_new_start_response(self, status="200 OK"):
         if not self.start_response:
-            self.debug(
-                "Start response not set, so cannot set new start response. Returning with empty hands")
+            self.debug("Start response not set, so cannot set new start response. Returning with empty hands")
             return
         old_start_response = self.start_response
         headers = self.headers
@@ -1049,8 +1048,7 @@ class Bicchiere(BicchiereMiddleware):
     @headers_set.setter
     def headers_set(self, new_hs):
         self.__local_data.headers_set = new_hs
-        self.debug(
-            f"Setting var self.headers_set to {self.__local_data.headers_set}")
+        self.debug(f"Setting var self.headers_set to {self.__local_data.headers_set}")
 
     @headers_set.deleter
     def headers_set(self):
@@ -1174,8 +1172,7 @@ class Bicchiere(BicchiereMiddleware):
                 self.cookies = SimpleCookie(
                     self.environ[h].strip().replace(' ', ''))
                 for h in self.cookies:
-                    self.debug(
-                        f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
+                    self.debug(f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
         self.environ['bicchiere_cookies'] = str(self.cookies).strip()
 
         sid = self.cookies.get('sid', None)
@@ -1388,29 +1385,29 @@ class Bicchiere(BicchiereMiddleware):
     def tobytes(s):
         retval = None
         if not hasattr(s, '__iter__'):
-            #print("Not an iterable, returning an empty bytes string")
+            #Bicchiere.debug("Not an iterable, returning an empty bytes string")
             retval = b''
         if type(s).__name__ == 'generator':
-            #print("Got a generator, transforming it into a list")
+            #Bicchiere.debug("Got a generator, transforming it into a list")
             s = [x for x in s]  # pack the generator in a list and then go on
         if len(s) == 0:
-            #print(f"Length s for provided {s.__class__.__name__}, returning an empty bytes string")
+            #Bicchiere.debug(f"Length s for provided {s.__class__.__name__}, returning an empty bytes string")
             retval = b''
         elif type(s[0]) == int:
-            #print("Got a byte string, returning it unchanged")
+            #Bicchiere.debug("Got a byte string, returning it unchanged")
             retval = s  # It's a sequence of ints, i.e. bytes
         elif type(s[0]) == bytes:
-            #print("Got a sequence of byte strings, joining it in one prev. to returning it.")
+            #Bicchiere.debug("Got a sequence of byte strings, joining it in one prev. to returning it.")
             retval = b''.join(s)  # It's a sequence of byte strings
         elif type(s[0]) == str:
-            #print(f"STRING: '{s[ : 20]}' ...")
+            #Bicchiere.debug(f"STRING: '{s[ : 20]}' ...")
             # if (len(s[0]) > 1):
-            #    print(f"List of strings. First is '{s[0]}'. Joining the whole thing prev to return")
+            #    Bicchiere.debug(f"List of strings. First is '{s[0]}'. Joining the whole thing prev to return")
             # else:
-            #    print("Just one string. Joining it prev to return")
+            #    Bicchiere.debug("Just one string. Joining it prev to return")
             # encode each str to bytes prev to joining
             retval = b''.join([x.encode('utf-8') for x in s])
-            #print(f"Return value is: {retval}")
+            #Bicchiere.debug(f"Return value is: {retval}")
         else:
             retval = b''
 
@@ -1917,6 +1914,8 @@ class Bicchiere(BicchiereMiddleware):
         Bicchiere.config['session_class'] = FileSession
         FileSession.secret = "20181209"
         app = cls(f"Demo {bevanda} App")
+        app.config.debug = False
+        #app.config.debug = True
 
         # prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
         #        demo_css = Bicchiere.get_demo_css())
@@ -2304,8 +2303,7 @@ class Bicchiere(BicchiereMiddleware):
                 import bjoern as server
                 def server_action(): return server.run(application, host, port)
             except Exception as exc:
-                print(
-                    f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
+                print(f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
                 server_name = 'wsgiref'
 
         if server_name == 'gunicorn':
@@ -2315,8 +2313,7 @@ class Bicchiere(BicchiereMiddleware):
                 def server_action(): return server(
                     application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
             except Exception as exc:
-                print(
-                    f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
+                print(f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
                 server_name = 'wsgiref'
 
         if server_name == 'wsgiref':
