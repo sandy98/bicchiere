@@ -767,7 +767,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 7, 2)
+    __version__ = (0, 7, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1981,8 +1981,11 @@ class Bicchiere(BicchiereMiddleware):
                 ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
             #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
             heading = "WSGI, Bicchiere Flavor"
-            contents = '''<h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>'''
-            contents = contents.format(randomcolor, bevanda)
+            contents = '''
+            <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
+            <h3>Portato cui da Bicchiere v{2}</h3>
+            '''
+            contents = contents.format(randomcolor, bevanda, app.version)
             info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
             # return "{}{}{}".format(prefix, info, suffix)
             # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
