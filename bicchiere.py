@@ -769,7 +769,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 7, 10)
+    __version__ = (0, 7, 11)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
