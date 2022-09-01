@@ -15,13 +15,18 @@ except:
         print("No virtual environment.")
 
 from datetime import datetime
-from bicchiere import Bicchiere, SqliteSession
+try:
+    from bicchiere import Bicchiere, SqliteSession
+except:
+    print("You must run 'pip install bicchiere' prior to using this app")
+    os.sys.exit(1)
+
 try:
     from gevent.pywsgi import WSGIServer
     from geventwebsocket import WebSocketError, websocket
     from geventwebsocket.handler import WebSocketHandler
 except:
-    print("You must do 'pip install gevent-websocket' prior to using this app")
+    print("You must run 'pip install gevent-websocket' prior to using this app")
     os.sys.exit(1)
 
 html = """
