@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os, json
+
 try:
     import activate
 except:
@@ -11,7 +13,7 @@ except:
         print('Virtual environment activated.')
     else:
         print("No virtual environment.")
-import os, json
+
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession
 try:
@@ -193,8 +195,9 @@ def websocket_handler():
         return app.redirect("/")
     wsock = app.environ.get('wsgi.websocket')
     if not wsock:
-        print("No websocket found :-(")
-        return "Merda!"
+        msg = "No websocket found in environment. :-("
+        print(msg)
+        return msg
     if not wsock in app.socks:
         wsock = UserSocket(get_username(app), wsock, usercolor = app.session.usercolor or "#008800")
         print(f"New socket added for user: {wsock.user}")
