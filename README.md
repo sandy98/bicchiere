@@ -4,7 +4,7 @@
 
 <p align="center"><img title="Un bel bicchiere di Campari" src="https://bicchiere.eu.pythonanywhere.com/static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
 
-## Yet another python web (WSGI) micro-framework
+## Yet another Python web (WSGI) micro-framework
 
 Following [Flask](https://flask.palletsprojects.com/en/2.1.x/) and [Bottle](https://bottlepy.org/docs/dev/) footsteps, adding a bit of italian flavor :-)
 
