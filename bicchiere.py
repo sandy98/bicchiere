@@ -767,12 +767,12 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 7, 5)
+    __version__ = (0, 7, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
     known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
-    known_asgi_servers = ['uvicorn']
+    known_asgi_servers = ['uvicorn', 'hypercorn']
     bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
 
     def __init__(self, application=None):

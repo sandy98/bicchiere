@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import activate
+try:
+    import activate
+except:
+    atp_path = './bin/activate_this.py'
+    if os.path.exists(atp_path):
+        print('Activating virtual environment.')
+        exec(open(atp_path).read(), dict(__file__ = atp_path))
+        print('Virtual environment activated.')
+    else:
+        print("No virtual environment.")
 import os, json
 from datetime import datetime
 from bicchiere import Bicchiere, SqliteSession
@@ -155,7 +164,7 @@ class UserSocket:
             return False
 
 app = Bicchiere()
-app.session_class = SqliteSession
+app.config.session_class = SqliteSession
 app.socks = set()
 app.msgs = []
 app.register_template_filter("isnone", isnone)
