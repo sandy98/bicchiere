@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import mimetypes
 import os
 import random
 import re
@@ -11,6 +12,7 @@ import base64
 import sqlite3
 import hmac
 import hashlib
+import urllib.request
 
 from email import charset
 from io import StringIO
@@ -767,7 +769,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 7, 7)
+    __version__ = (0, 7, 8)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -905,8 +907,28 @@ class Bicchiere(BicchiereMiddleware):
             @wraps(func)
             def wrapper(*args, **kwargs):
                 del self.headers['Content-Type']
-                self.headers.add_header(
-                    'Content-Type', c_type, charset=charset, **attrs)
+                self.headers.add_header('Content-Type', c_type, charset=charset, **attrs)
+                self.set_new_start_response()
+                self.start_response("200 OK", self.headers.items())
+                return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    def custom_header(self, header_name="Content-Disposition", header_value="attachment", charset = "utf-8", **attrs):
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                self.debug(f"Adding header {header_name} with value {header_value} and attrs: {attrs}")
+                self.headers.add_header(header_name, header_value, **attrs)
+                if header_name == "Content-Disposition" and header_value == "attachment" and "filename" in attrs:
+                    filename = attrs["filename"]
+                    try:
+                        filetype = mimetypes.guess_type(filename)[0]
+                    except:
+                        filetype = "text/plain"
+                    del self.headers['Content-Type']
+                    self.debug(f"Trying to set content type to {filetype}")
+                    self.headers.add_header('Content-Type', filetype, charset=charset)
                 self.set_new_start_response()
                 self.start_response("200 OK", self.headers.items())
                 return func(*args, **kwargs)
@@ -1972,6 +1994,10 @@ class Bicchiere(BicchiereMiddleware):
         dropdown.addItem(MenuItem("Show '/static' directory", "/showstatic"))
         menu.addItem(dropdown)
 
+        dropdown = DropdownMenu("Downloads")
+        dropdown.addItem(MenuItem("Chat Room Websockets Example App", "/downlchatroom"))
+        menu.addItem(dropdown)
+
         menu.addItem(MenuItem("About", "/about"))
 
         @app.get('/')
@@ -2094,6 +2120,13 @@ class Bicchiere(BicchiereMiddleware):
                                              page_title="Demo Bicchiere App - Hello Page",
                                              menu_content=str(menu),
                                              main_contents=info)
+
+        @app.get("/downlchatroom")
+        #@app.content_type('text/x-python')
+        @app.custom_header("Content-Disposition", "attachment", filename = "chat_room.py")
+        def downlchatroom():
+            contents = urllib.request.urlopen("https://raw.githubusercontent.com/sandy98/bicchiere/main/oven/chat_room.py").read()
+            return contents
 
         @app.get("/showstatic")
         def showstatic():
