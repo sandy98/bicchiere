@@ -209,6 +209,9 @@ def websocket_handler():
         app.socks.add(wsock)
         for msg in app.msgs:
             wsock.socket.send(msg)
+    else:
+        wsock.user = app.session.user
+        wsock.usercolor = app.session.usercolor
     while True:
         try:
             msg = wsock.socket.receive()
