@@ -130,10 +130,11 @@ class TemplateLight:
         """
 
     def __init__(self, text, **contexts):
-        """Construct a Templite with the given `text`.
-        `contexts` are dictionaries of values to use for future renderings.
+        """Construct a TemplateLight with the given `text`.
+        `contexts` are key-value pairs to use for future renderings.
         These are good for filters and global values.
         """
+        self._template_text = text
         self.context = {}
         # for context in contexts:
         # self.context.update(context)
@@ -161,7 +162,8 @@ class TemplateLight:
             del buffered[:]
 
         ops_stack = []
-
+        text = text.replace(",", " , ")
+        print("TEMPLATE TEXT\n{0}".format(text))
         tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
 
         for token in tokens:
@@ -178,10 +180,10 @@ class TemplateLight:
                 words = token[2:-2].strip().split()
                 if words[0] == 'if':
                     # An if statement: evaluate the expression to determine if.
-                    if len(words) != 2:
-                        self._syntax_error("Don't understand if", token)
+                    #if len(words) != 2:
+                    #    self._syntax_error("Don't understand if", token)
                     ops_stack.append('if')
-                    code.add_line("if {0}:".format(self._expr_code(words[1])))
+                    code.add_line("if {0}:".format(self._expr_code(words[1:])))
                     code.indent()
                 elif words[0] == 'elif':
                     # An elif statement: evaluate the expression to determine else.
@@ -195,7 +197,7 @@ class TemplateLight:
                         self._syntax_error("'Elif' without previous 'if'", token)
                     ops_stack.append('if')
                     code.dedent()
-                    code.add_line("elif {0}:".format(self._expr_code(words[1])))
+                    code.add_line("elif {0}:".format(self._expr_code(words[1:])))
                     code.indent()
                 elif words[0] == 'else':
                     # An else statement: evaluate the expression to determine else.
@@ -213,16 +215,15 @@ class TemplateLight:
                     code.indent()
                 elif words[0] == 'for':
                     # A loop: iterate over expression result.
-                    if len(words) != 4 or words[2] != 'in':
+                    if words[-2] != 'in':
                         self._syntax_error("Don't understand for", token)
                     ops_stack.append('for')
-                    self._variable(words[1], self.loop_vars)
-                    code.add_line(
-                        "for c_{0} in {1}:".format(
-                            words[1],
-                            self._expr_code(words[3])
-                        )
-                    )
+                    loopvars = list(filter(lambda x: x != ',', words[1:-2]))
+                    for loopvar in loopvars:
+                        self._variable(loopvar, self.loop_vars)
+                    deco_loopvars = list(map(lambda v: f"c_{v}", loopvars))
+                    line_to_add = "for {0} in {1}:".format(" , ".join(deco_loopvars), self._expr_code(words[-1]))
+                    code.add_line(line_to_add)
                     code.indent()
                 elif words[0].startswith('end'):
                     # Endsomething.  Pop the ops stack.
@@ -256,14 +257,23 @@ class TemplateLight:
         self._code = code
         self._render_function = code.get_globals()['render_function']
 
+    def _is_variable(self, name):
+        pattrn = r"(?P<varname>[_a-zA-Z][_a-zA-Z0-9]*)(?P<subscript>\[(?P<subvar>.+)\])?$"
+        return re.match(pattrn, name)
+
     def _variable(self, name, vars_set):
         """Track that `name` is used as a variable.
         Adds the name to `vars_set`, a set of variable names.
         Raises an syntax error if `name` is not a valid name.
         """
-        if not re.match(r"[_a-zA-Z][_a-zA-Z0-9]*$", name):
+        m = self._is_variable(name)
+        if not m:
             self._syntax_error("Not a valid name", name)
-        vars_set.add(name)
+        d = m.groupdict()
+        vars_set.add(d.get("varname"))
+        #subvar = d.get("subvar")
+        #if subvar and self._is_variable(subvar):
+        #    vars_set.add(self._expr_code(subvar))
 
     def _expr_code(self, expr):
         """Generate a Python expression for `expr`."""
@@ -279,8 +289,22 @@ class TemplateLight:
             args = ", ".join(repr(d) for d in dots[1:])
             code = "do_dots(%s, %s)" % (code, args)
         else:
-            self._variable(expr, self.all_vars)
-            code = "c_%s" % expr
+            subexprs = expr.split()
+            code = ""
+            for subexpr in subexprs:
+                m = self._is_variable(subexpr)
+                if m:
+                    self._variable(subexpr, self.all_vars)
+                    d = m.groupdict()
+                    varname = f"c_{d.get('varname')}"
+                    subscript = d.get('subscript', '')
+                    if subscript:
+                        subvar = d.get('subvar')
+                        if subvar and self._is_variable(subvar):
+                            subscript = subscript.replace(subvar, f"c_{subvar}")
+                    code += "{0}{1} ".format(varname, subscript if subscript else "")
+                else:
+                    code += f"{subexpr} "
         return code
 
     def _syntax_error(self, msg, thing):
@@ -293,6 +317,8 @@ class TemplateLight:
             try:
                 value = getattr(value, dot)
             except AttributeError:
+                if isinstance(value, list) or isinstance(value, tuple):
+                    dot = int(dot)
                 value = value[dot]
             if callable(value):
                 value = value()
@@ -783,7 +809,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 8, 2)
+    __version__ = (0, 9, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
