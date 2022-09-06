@@ -12,6 +12,7 @@ import base64
 import sqlite3
 import hmac
 import hashlib
+import asyncio
 import urllib.request
 
 from email import charset
@@ -809,12 +810,12 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 9, 2)
+    __version__ = (0, 9, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
-    known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref']
-    known_asgi_servers = ['uvicorn', 'hypercorn']
+    known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref', 'waitress', 'uwsgi']
+    known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
     bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
 
     def __init__(self, application=None):
@@ -1973,10 +1974,11 @@ class Bicchiere(BicchiereMiddleware):
     def demo_app(cls):
         bevanda = random.choice(Bicchiere.bevande)
 
-        Bicchiere.config['session_class'] = FileSession
         FileSession.secret = "20181209"
         app = cls(f"Demo {bevanda} App")
         app.config.debug = False
+        app.config.allow_directory_listing = True
+        app.config.session_class = FileSession
         #app.config.debug = True
 
         # prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
@@ -2433,6 +2435,15 @@ class Bicchiere(BicchiereMiddleware):
             print("\nBicchiere  è finito.\n")
 
 # End main Bicchiere App class
+
+# Async descendant of Bicchiere
+
+class AsyncBicchiere(Bicchiere):
+    "ASGI version of Bicchiere"
+    async def __call__(self, context, receive, send):
+        return "ASYNC"
+
+# End AsyncBicchiere
 
 # Miscelaneous exports
 
