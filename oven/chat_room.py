@@ -25,6 +25,8 @@ try:
     from gevent.pywsgi import WSGIServer
     from geventwebsocket import WebSocketError, websocket
     from geventwebsocket.handler import WebSocketHandler
+    #from wsgiref.simple_server import make_server
+
 except:
     print("You must run 'pip install gevent-websocket' prior to using this app")
     os.sys.exit(1)
@@ -135,11 +137,16 @@ html = """
         ws.onmessage = function(ev) {
             // alert(ev.data);
             data = JSON.parse(ev.data);
+            console.log(data);
+            console.log("Received at " + new Date().toLocaleString());
             var innerHTML = `<span style="color: ${data.usercolor};">${data.user}:&nbsp;&nbsp;&nbsp;</span><span>${data.msg}</span>`
             var newdiv = document.createElement('div');
             newdiv.innerHTML = innerHTML;
             msg_list.appendChild(newdiv);
             msg_list.scrollTop = msg_list.scrollHeight;
+        }
+        ws.onclose = function(ev) {
+            console.log("Websocket closed at " + new Date().toLocaleString());
         }
     </script>
 </body>
@@ -220,12 +227,18 @@ def websocket_handler():
                 app.msgs.append(fmsg)
                 for wsk in app.socks:
                     wsk.socket.send(fmsg)
-        except WebSocketError:
+        except WebSocketError as err:
+            print(f"Error in socket: {repr(err)}")
             app.socks.remove(wsock)
             break
+#        finally:
+#            return "Websocket set, used and now is out."
 
 def main():
     server = WSGIServer(('0.0.0.0', 8088), app, handler_class=WebSocketHandler)
+    #server = WSGIServer(('0.0.0.0', 8088), app)
+    #server = make_server("0.0.0.0", 8088, app, handler_class=WebSocketHandler)
+    #server = make_server("0.0.0.0", 8088, app)
     try:
         print("Serving http and websockets at port 8088.")
         server.serve_forever()
