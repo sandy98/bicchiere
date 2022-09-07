@@ -164,7 +164,6 @@ class TemplateLight:
 
         ops_stack = []
         text = text.replace(",", " , ")
-        print("TEMPLATE TEXT\n{0}".format(text))
         tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
 
         for token in tokens:
@@ -184,7 +183,7 @@ class TemplateLight:
                     #if len(words) != 2:
                     #    self._syntax_error("Don't understand if", token)
                     ops_stack.append('if')
-                    code.add_line("if {0}:".format(self._expr_code(words[1:])))
+                    code.add_line("if {0}:".format(self._expr_code(' '.join(words[1:]))))
                     code.indent()
                 elif words[0] == 'elif':
                     # An elif statement: evaluate the expression to determine else.
@@ -198,7 +197,7 @@ class TemplateLight:
                         self._syntax_error("'Elif' without previous 'if'", token)
                     ops_stack.append('if')
                     code.dedent()
-                    code.add_line("elif {0}:".format(self._expr_code(words[1:])))
+                    code.add_line("elif {0}:".format(self._expr_code(' '.join(words[1:]))))
                     code.indent()
                 elif words[0] == 'else':
                     # An else statement: evaluate the expression to determine else.
@@ -810,7 +809,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 9, 5)
+    __version__ = (0, 9, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
