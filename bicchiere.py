@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import logging
+import struct
 import mimetypes
 import os
 import random
@@ -14,6 +16,7 @@ import hmac
 import hashlib
 import asyncio
 import urllib.request
+import wsgiref.util
 
 from email import charset
 from io import StringIO
@@ -22,12 +25,40 @@ from time import time, sleep
 import time as o_time
 from functools import reduce, wraps
 from http.cookies import SimpleCookie, Morsel
+from socketserver import ThreadingMixIn
+import socket
+from socket import error as socket_error
 from wsgiref.headers import Headers
-from wsgiref.simple_server import make_server, demo_app as simple_demo_app
+from wsgiref.simple_server import make_server, ServerHandler, WSGIRequestHandler, WSGIServer, demo_app as simple_demo_app
 from uuid import uuid4
 from urllib.parse import parse_qsl
 from mimetypes import guess_type
+import wsgiref.util
 
+_is_hop_by_hop = wsgiref.util.is_hop_by_hop
+
+wsgiref.util.is_hop_by_hop = lambda x: False
+
+hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ' '} been modified"
+
+print(hop_modified)
+#sleep(3)
+
+#Threading server
+
+class TWServer(ThreadingMixIn, WSGIServer):
+    """This class is identical to WSGIServer but uses threads to handle
+    requests by using the ThreadingMixIn. This is useful to handle web
+    browsers pre-opening sockets, on which Server would wait indefinitely.
+    Credits for the idea to Kavindu Santhusa (@ksenginew)
+    See https://github.com/ksenginew/WSocket
+    """
+
+    multithread = True
+    daemon_threads = True
+
+
+#Threading server
 
 # Routing classes
 
@@ -809,11 +840,11 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 9, 8)
+    __version__ = (0, 9, 9)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
-    known_wsgi_servers = ['gunicorn', 'bjoern', 'wsgiref', 'waitress', 'uwsgi']
+    known_wsgi_servers = ['twserver', 'gunicorn', 'bjoern', 'wsgiref', 'waitress', 'uwsgi']
     known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
     bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"] # Ma dai! Cos'e questo?
 
@@ -857,6 +888,577 @@ class BicchiereMiddleware:
 
 # End of middleware
 
+#Websocket auxiliary classes
+
+class Utf8Validator():
+    def validate(self):
+        return True
+
+class WebSocketError(BaseException):
+    pass
+
+class ProtocolError(WebSocketError):
+    pass
+
+class FrameTooLargeException(ProtocolError):
+    """
+    Raised if a frame is received that is too large.
+    """
+
+
+class Stream():
+    """
+    Wraps the handler's socket/rfile attributes and makes it in to a file like
+    object that can be read from/written to by the lower level websocket api.
+    """
+
+    __slots__ = ('handler', 'read', 'write')
+
+    def __init__(self, reader, writer, handler):
+        self.handler = handler
+        self.read = reader.read
+        self.write = writer
+
+
+class WebSocketHeader():
+    __slots__ = ('fin', 'mask', 'opcode', 'flags', 'length')
+
+    FIN_MASK = 0x80
+    OPCODE_MASK = 0x0f
+    MASK_MASK = 0x80
+    LENGTH_MASK = 0x7f
+
+    RSV0_MASK = 0x40
+    RSV1_MASK = 0x20
+    RSV2_MASK = 0x10
+
+    # bitwise mask that will determine the reserved bits for a frame header
+    HEADER_FLAG_MASK = RSV0_MASK | RSV1_MASK | RSV2_MASK
+
+    def __init__(self, fin=0, opcode=0, flags=0, length=0):
+        self.mask = ''
+        self.fin = fin
+        self.opcode = opcode
+        self.flags = flags
+        self.length = length
+
+    def mask_payload(self, payload):
+        payload = bytearray(payload)
+        mask = bytearray(self.mask)
+
+        for i in range(self.length):
+            payload[i] ^= mask[i % 4]
+
+        return payload
+
+    # it's the same operation
+    unmask_payload = mask_payload
+
+    def __repr__(self):
+        opcodes = {
+            0: 'continuation(0)',
+            1: 'text(1)',
+            2: 'binary(2)',
+            8: 'close(8)',
+            9: 'ping(9)',
+            10: 'pong(10)'
+        }
+        flags = {
+            0x40: 'RSV1 MASK',
+            0x20: 'RSV2 MASK',
+            0x10: 'RSV3 MASK'
+        }
+
+        return ("<Header fin={0} opcode={1} length={2} flags={3} mask={4} at "
+                "0x{5:x}>").format(
+                    self.fin,
+                    opcodes.get(self.opcode, 'reserved({})'.format(self.opcode)),
+                    self.length,
+                    flags.get(self.flags, 'reserved({})'.format(self.flags)),
+                    self.mask, id(self)
+        )
+
+    @classmethod
+    def decode_header(cls, stream):
+        """
+        Decode a WebSocket header.
+
+        :param stream: A file like object that can be 'read' from.
+        :returns: A `Header` instance.
+        """
+        read = stream.read
+        data = read(2)
+
+        if len(data) != 2:
+            raise WebSocketError("Unexpected EOF while decoding header")
+
+        first_byte, second_byte = struct.unpack('!BB', data)
+
+        header = cls(
+            fin=first_byte & cls.FIN_MASK == cls.FIN_MASK,
+            opcode=first_byte & cls.OPCODE_MASK,
+            flags=first_byte & cls.HEADER_FLAG_MASK,
+            length=second_byte & cls.LENGTH_MASK)
+
+        has_mask = second_byte & cls.MASK_MASK == cls.MASK_MASK
+
+        if header.opcode > 0x07:
+            if not header.fin:
+                raise ProtocolError(
+                    "Received fragmented control frame: {0!r}".format(data))
+
+            # Control frames MUST have a payload length of 125 bytes or less
+            if header.length > 125:
+                raise FrameTooLargeException(
+                    "Control frame cannot be larger than 125 bytes: "
+                    "{0!r}".format(data))
+
+        if header.length == 126:
+            # 16 bit length
+            data = read(2)
+
+            if len(data) != 2:
+                raise WebSocketError('Unexpected EOF while decoding header')
+
+            header.length = struct.unpack('!H', data)[0]
+        elif header.length == 127:
+            # 64 bit length
+            data = read(8)
+
+            if len(data) != 8:
+                raise WebSocketError('Unexpected EOF while decoding header')
+
+            header.length = struct.unpack('!Q', data)[0]
+
+        if has_mask:
+            mask = read(4)
+
+            if len(mask) != 4:
+                raise WebSocketError('Unexpected EOF while decoding header')
+
+            header.mask = mask
+
+        return header
+
+    @classmethod
+    def encode_header(cls, fin, opcode, mask, length, flags):
+        """
+        Encodes a WebSocket header.
+
+        :param fin: Whether this is the final frame for this opcode.
+        :param opcode: The opcode of the payload, see `OPCODE_*`
+        :param mask: Whether the payload is masked.
+        :param length: The length of the frame.
+        :param flags: The RSV* flags.
+        :return: A bytestring encoded header.
+        """
+        first_byte = opcode
+        second_byte = 0
+        extra = b""
+        result = bytearray()
+
+        if fin:
+            first_byte |= cls.FIN_MASK
+
+        if flags & cls.RSV0_MASK:
+            first_byte |= cls.RSV0_MASK
+
+        if flags & cls.RSV1_MASK:
+            first_byte |= cls.RSV1_MASK
+
+        if flags & cls.RSV2_MASK:
+            first_byte |= cls.RSV2_MASK
+
+        # now deal with length complexities
+        if length < 126:
+            second_byte += length
+        elif length <= 0xffff:
+            second_byte += 126
+            extra = struct.pack('!H', length)
+        elif length <= 0xffffffffffffffff:
+            second_byte += 127
+            extra = struct.pack('!Q', length)
+        else:
+            raise FrameTooLargeException
+
+        if mask:
+            second_byte |= cls.MASK_MASK
+
+        result.append(first_byte)
+        result.append(second_byte)
+        result.extend(extra)
+
+        if mask:
+            result.extend(mask)
+
+        return result
+
+class WebSocket():
+    """
+    Base class for supporting websocket operations.
+
+    :ivar environ: The http environment referenced by this connection.
+    :ivar closed: Whether this connection is closed/closing.
+    :ivar stream: The underlying file like object that will be read from /
+        written to by this WebSocket object.
+    """
+
+    __slots__ = ('utf8validator', 'utf8validate_last', 'environ', 'closed',
+                 'stream', 'raw_write', 'raw_read', 'handler')
+
+    OPCODE_CONTINUATION = 0x00
+    OPCODE_TEXT = 0x01
+    OPCODE_BINARY = 0x02
+    OPCODE_CLOSE = 0x08
+    OPCODE_PING = 0x09
+    OPCODE_PONG = 0x0a
+
+    MSG_SOCKET_DEAD = "Socket is dead"
+    MSG_ALREADY_CLOSED = "Connection is already closed"
+    MSG_CLOSED = "Connection closed"
+
+    def __init__(self, environ, reader, writer, handler):
+        self.environ = environ
+        self.closed = False
+
+        self.stream = Stream(reader, writer, handler)
+
+        self.raw_write = writer
+        self.raw_read = reader.read
+
+        self.utf8validator = Utf8Validator()
+        self.handler = handler
+
+    def __del__(self):
+        try:
+            self.close()
+        except:
+            # close() may fail if __init__ didn't complete
+            pass
+
+    def _decode_bytes(self, bytestring):
+        """
+        Internal method used to convert the utf-8 encoded bytestring into
+        unicode.
+
+        If the conversion fails, the socket will be closed.
+        """
+
+        if not bytestring:
+            return ''
+
+        try:
+            return bytestring.decode('utf-8')
+        except UnicodeDecodeError:
+            self.close(1007)
+
+            raise
+
+    def _encode_bytes(self, text):
+        """
+        :returns: The utf-8 byte string equivalent of `text`.
+        """
+
+        if not isinstance(text, str):
+            text = str(text or '')
+
+        return text.encode("utf-8")
+
+    def _is_valid_close_code(self, code):
+        """
+        :returns: Whether the returned close code is a valid hybi return code.
+        """
+        if code < 1000:
+            return False
+
+        if 1004 <= code <= 1006:
+            return False
+
+        if 1012 <= code <= 1016:
+            return False
+
+        if code == 1100:
+            # not sure about this one but the autobahn fuzzer requires it.
+            return False
+
+        if 2000 <= code <= 2999:
+            return False
+
+        return True
+
+    @property
+    def current_app(self):
+        if hasattr(self.handler.server.application, 'current_app'):
+            return self.handler.server.application.current_app
+        else:
+            # For backwards compatibility reasons
+            class MockApp():
+                def on_close(self, *args):
+                    pass
+
+            return MockApp()
+
+    @property
+    def origin(self):
+        if not self.environ:
+            return
+
+        return self.environ.get('HTTP_ORIGIN')
+
+    @property
+    def protocol(self):
+        if not self.environ:
+            return
+
+        return self.environ.get('HTTP_SEC_WEBSOCKET_PROTOCOL')
+
+    @property
+    def version(self):
+        if not self.environ:
+            return
+
+        return self.environ.get('HTTP_SEC_WEBSOCKET_VERSION')
+
+    @property
+    def path(self):
+        if not self.environ:
+            return
+
+        return self.environ.get('PATH_INFO')
+
+    @property
+    def logger(self):
+        return self.handler.logger
+
+    def handle_close(self, header, payload):
+        """
+        Called when a close frame has been decoded from the stream.
+
+        :param header: The decoded `Header`.
+        :param payload: The bytestring payload associated with the close frame.
+        """
+        if not payload:
+            self.close(1000, None)
+
+            return
+
+        if len(payload) < 2:
+            raise ProtocolError('Invalid close frame: {0} {1}'.format(
+                header, payload))
+
+        code = struct.unpack('!H', payload[:2])[0]
+        payload = payload[2:]
+
+        if payload:
+            validator = Utf8Validator()
+            val = validator.validate(payload)
+
+            if not val[0]:
+                raise UnicodeError
+
+        if not self._is_valid_close_code(code):
+            raise ProtocolError('Invalid close code {0}'.format(code))
+
+        self.close(code, payload)
+
+    def handle_ping(self, header, payload):
+        self.send_frame(payload, self.OPCODE_PONG)
+
+    def handle_pong(self, header, payload):
+        pass
+
+    def read_frame(self):
+        """
+        Block until a full frame has been read from the socket.
+
+        This is an internal method as calling this will not cleanup correctly
+        if an exception is called. Use `receive` instead.
+
+        :return: The header and payload as a tuple.
+        """
+
+        header = WebSocketHeader.decode_header(self.stream)
+
+        if header.flags:
+            raise ProtocolError
+
+        if not header.length:
+            return header, b''
+
+        try:
+            payload = self.raw_read(header.length)
+        except socket_error:
+            payload = b''
+        except Exception:
+            # TODO log out this exception
+            payload = b''
+
+        if len(payload) != header.length:
+            raise WebSocketError('Unexpected EOF reading frame payload')
+
+        if header.mask:
+            payload = header.unmask_payload(payload)
+
+        return header, payload
+
+    def validate_utf8(self, payload):
+        # Make sure the frames are decodable independently
+        self.utf8validate_last = self.utf8validator.validate(payload)
+
+        if not self.utf8validate_last[0]:
+            raise UnicodeError("Encountered invalid UTF-8 while processing "
+                               "text message at payload octet index "
+                               "{0:d}".format(self.utf8validate_last[3]))
+
+    def read_message(self):
+        """
+        Return the next text or binary message from the socket.
+
+        This is an internal method as calling this will not cleanup correctly
+        if an exception is called. Use `receive` instead.
+        """
+        opcode = None
+        message = bytearray()
+
+        while True:
+            header, payload = self.read_frame()
+            f_opcode = header.opcode
+
+            if f_opcode in (self.OPCODE_TEXT, self.OPCODE_BINARY):
+                # a new frame
+                if opcode:
+                    raise ProtocolError("The opcode in non-fin frame is "
+                                        "expected to be zero, got "
+                                        "{0!r}".format(f_opcode))
+
+                # Start reading a new message, reset the validator
+                self.utf8validator.reset()
+                self.utf8validate_last = (True, True, 0, 0)
+
+                opcode = f_opcode
+
+            elif f_opcode == self.OPCODE_CONTINUATION:
+                if not opcode:
+                    raise ProtocolError("Unexpected frame with opcode=0")
+
+            elif f_opcode == self.OPCODE_PING:
+                self.handle_ping(header, payload)
+                continue
+
+            elif f_opcode == self.OPCODE_PONG:
+                self.handle_pong(header, payload)
+                continue
+
+            elif f_opcode == self.OPCODE_CLOSE:
+                self.handle_close(header, payload)
+                return
+
+            else:
+                raise ProtocolError("Unexpected opcode={0!r}".format(f_opcode))
+
+            if opcode == self.OPCODE_TEXT:
+                self.validate_utf8(payload)
+
+            message += payload
+
+            if header.fin:
+                break
+
+        if opcode == self.OPCODE_TEXT:
+            self.validate_utf8(message)
+            return self._decode_bytes(message)
+        else:
+            return message
+
+    def receive(self):
+        """
+        Read and return a message from the stream. If `None` is returned, then
+        the socket is considered closed/errored.
+        """
+
+        if self.closed:
+            self.current_app.on_close(self.MSG_ALREADY_CLOSED)
+            raise WebSocketError(self.MSG_ALREADY_CLOSED)
+
+        try:
+            return self.read_message()
+        except UnicodeError:
+            self.close(1007)
+        except ProtocolError:
+            self.close(1002)
+        except socket_error:
+            self.close()
+            self.current_app.on_close(self.MSG_CLOSED)
+
+        return None
+
+    def send_frame(self, message, opcode):
+        """
+        Send a frame over the websocket with message as its payload
+        """
+        if self.closed:
+            self.current_app.on_close(self.MSG_ALREADY_CLOSED)
+            raise WebSocketError(self.MSG_ALREADY_CLOSED)
+
+        if opcode in (self.OPCODE_TEXT, self.OPCODE_PING):
+            message = self._encode_bytes(message)
+        elif opcode == self.OPCODE_BINARY:
+            message = bytes(message)
+
+        header = WebSocketHeader.encode_header(True, opcode, b'', len(message), 0)
+
+        try:
+            self.raw_write(header + message)
+        except socket_error:
+            raise WebSocketError(self.MSG_SOCKET_DEAD)
+        except:
+            raise
+
+    def send(self, message, binary=None):
+        """
+        Send a frame over the websocket with message as its payload
+        """
+        if binary is None:
+            binary = not isinstance(message, str)
+
+        opcode = self.OPCODE_BINARY if binary else self.OPCODE_TEXT
+
+        try:
+            self.send_frame(message, opcode)
+        except WebSocketError:
+            self.current_app.on_close(self.MSG_SOCKET_DEAD)
+            raise WebSocketError(self.MSG_SOCKET_DEAD)
+
+    def close(self, code=1000, message=b''):
+        """
+        Close the websocket and connection, sending the specified code and
+        message.  The underlying socket object is _not_ closed, that is the
+        responsibility of the initiator.
+        """
+
+        if self.closed:
+            self.current_app.on_close(self.MSG_ALREADY_CLOSED)
+
+        try:
+            message = self._encode_bytes(message)
+
+            self.send_frame(message, opcode=self.OPCODE_CLOSE)
+        except WebSocketError:
+            # Failed to write the closing frame but it's ok because we're
+            # closing the socket anyway.
+            self.logger.debug("Failed to write closing frame -> closing socket")
+        finally:
+            self.logger.debug("Closed WebSocket")
+            self.closed = True
+
+            self.stream = None
+            self.raw_write = None
+            self.raw_read = None
+
+            self.environ = None
+
+
+#End of websocket auxiliary classes
 
 # Main Bicchiere App class
 
@@ -877,6 +1479,8 @@ class Bicchiere(BicchiereMiddleware):
 
         # First, things that don't vary through calls
         self.name = name if name else random.choice(Bicchiere.bevande)
+        self.logger = logging.getLogger(self.name)
+        logging.basicConfig()
         self.session_class = Bicchiere.config['session_class']
         if not self.session_class.secret:
             self.session_class.secret = uuid4().hex
@@ -902,8 +1506,13 @@ class Bicchiere(BicchiereMiddleware):
         return f"{major}.{minor}.{release}"
 
     def debug(self, *args, **kw):
-        if hasattr(self, "config") and hasattr(self.config, "get") and self.config.get("debug", False):
-            print(*args, **kw)
+        if hasattr(self, "config") and hasattr(self.config, "get"):
+            if self.config.get("debug"):
+                #print(f"Debug for {self.name} is active.")
+                #print(*args, **kw)
+                #pass
+                self.logger.setLevel(10)
+                self.logger.debug(*args, **kw)
 
     def set_new_start_response(self, status="200 OK"):
         if not self.start_response:
@@ -915,8 +1524,8 @@ class Bicchiere(BicchiereMiddleware):
 
         def new_start_response(status, headers, exc_info=None):
             try:
-                if not self.headers_set:
-                    self.headers_set = True
+                if not self.headers_sent:
+                    self.headers_sent = True
                 return old_start_response(status, applied_headers, exc_info)
             except Exception as exc:
                 self.debug(f"ERROR en set_new_start response: {str(exc)}")
@@ -940,6 +1549,59 @@ class Bicchiere(BicchiereMiddleware):
         return [status_line.encode("utf-8")]
 
 # Decorators
+
+# Web socket handler decorator
+
+    def websocket_handler(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if asyncio.iscoroutinefunction(func) is False:
+                raise WebSocketError("Web socket handler must be an async coroutine.")
+            known_versions = ('13', '8', '7')
+            guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+            connection = self.environ.get("HTTP_CONNECTION")
+            if not connection or connection != "Upgrade":
+                raise WebSocketError("Not a websocket request.")
+            upgrade = self.environ.get("HTTP_UPGRADE")
+            if not upgrade or upgrade != "websocket":
+                raise WebSocketError("Not a websocket request.")
+            wsversion = self.environ.get("HTTP_SEC_WEBSOCKET_VERSION")
+            if not wsversion or wsversion not in known_versions:
+                raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
+            wskey = self.environ.get("HTTP_SEC_WEBSOCKET_KEY")
+            if not wskey:
+                raise WebSocketError("Non existent websocket key.")
+            key_len = len(base64.b64decode(wskey))
+            if key_len != 16:
+                raise WebSocketError(f"Incorrect websocket key.")
+            requested_protocols = self.environ.get('HTTP_SEC_WEBSOCKET_PROTOCOL', '')
+            protocol = None if not requested_protocols else re.split(r"/s*,/s*", requested_protocols)[0]
+            
+            accept = base64.b64encode(hashlib.sha1((wskey + guid).encode("latin-1")).digest()).decode("latin-1")
+            headers = [("Upgrade", "websocket"), ("Connection", "Upgrade"), ("Sec-WebSocket-Accept", accept)]
+            if protocol:
+                headers.append(("Sec-WebSocket-Protocol", protocol))
+            
+            final_headers = [(k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
+            self.debug(f"Response headers for websocket:\n{final_headers}")
+
+            self.writer = self.start_response("101 Switching protocols", final_headers)
+            self.headers_sent = True
+            ### Create the websocket object and update environ
+            self.reader = self.environ.get("wsgi.input")
+            self.websocket = WebSocket(self.environ, self.reader, self.writer, self)
+            self.environ["wsgi.websocket"] = self.websocket
+            self.environ["wsgi.version"] = wsversion
+            ### End of websocket creation part
+
+            retval =  asyncio.run(func(*args, **kwargs))
+            retval
+
+        return wrapper
+
+# End of Web socket handler decorator
+
+
 # Content decorators
 
     def content_type(self, c_type="text/html", charset="utf-8", **attrs):
@@ -986,6 +1648,8 @@ class Bicchiere(BicchiereMiddleware):
 
     def csv_content(self, **attrs):
         return self.content_type("text/csv", "utf-8", **attrs)
+
+# End of Content decorators
 
 # Routing decorators
 
@@ -1104,17 +1768,17 @@ class Bicchiere(BicchiereMiddleware):
         del self.__local_data.form
 
     @property
-    def headers_set(self):
-        return self.__local_data.headers_set
+    def headers_sent(self):
+        return self.__local_data.headers_sent
 
-    @headers_set.setter
-    def headers_set(self, new_hs):
-        self.__local_data.headers_set = new_hs
-        self.debug(f"Setting var self.headers_set to {self.__local_data.headers_set}")
+    @headers_sent.setter
+    def headers_sent(self, new_hs):
+        self.__local_data.headers_sent = new_hs
+        #self.debug(f"Setting var self.headers_sent to {self.__local_data.headers_sent}")
 
-    @headers_set.deleter
-    def headers_set(self):
-        del self.__local_data.headers_set
+    @headers_sent.deleter
+    def headers_sent(self):
+        del self.__local_data.headers_sent
 
     def _show_local_data(self):
         return self.__local_data.__dict__
@@ -1143,7 +1807,7 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data.__dict__.setdefault('cookies', SimpleCookie())
         self.__local_data.__dict__.setdefault('args', None)
         self.__local_data.__dict__.setdefault('form', None)
-        self.__local_data.__dict__.setdefault('headers_set', False)
+        self.__local_data.__dict__.setdefault('headers_sent', False)
 
     # Template related stuff
 
@@ -1223,7 +1887,7 @@ class Bicchiere(BicchiereMiddleware):
             del self.session
         self.session = None
         self.cookies = SimpleCookie()
-        self.headers_set = False
+        self.headers_sent = False
 
         if self.environ is None:
             return
@@ -1248,7 +1912,7 @@ class Bicchiere(BicchiereMiddleware):
 
         self.session = self.get_session(sid)
         self.session['USER_AGENT'.lower()] = self.environ['HTTP_USER_AGENT']
-        self.session['REMOTE_ADDR'.lower()] = self.environ['REMOTE_ADDR']
+        self.session['REMOTE_ADDR'.lower()] = self.environ.get("HTTP_X_FORWARDED_FOR", self.environ.get('REMOTE_ADDR'))
         self.environ['bicchiere_session'] = self.session
 
         cookie_opts = {}
@@ -1394,7 +2058,7 @@ class Bicchiere(BicchiereMiddleware):
                                  <span style="color: red;">{self.environ["PATH_INFO"]}</span>
                                  raised an error: <span style="color: red;">{str(exc)}.</span>'''
 
-        if not self.headers_set:
+        if not self.headers_sent:
             if 'content-type' not in self.headers:
                 if response and self.is_html(response):
                     self.headers.add_header(
@@ -2041,6 +2705,18 @@ class Bicchiere(BicchiereMiddleware):
 
         menu.addItem(MenuItem("About", "/about"))
 
+        @app.get("/wstest")
+        @app.websocket_handler
+        async def wstest():
+            app.wsock = app.environ.get("wsgi.websocket")
+            #app.wsock.send("Ciao, straniero!")
+            #while True:
+                #pass
+                #data = app.wsock.receive()
+                #app.wsock.send(f"ECHO:   {data}")
+            #return b' '
+            app.debug(dir(app.wsock))
+
         @app.get('/')
         @app.html_content()
         def home():
@@ -2051,6 +2727,11 @@ class Bicchiere(BicchiereMiddleware):
             contents = '''
             <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
             <h3>Portato cui da Bicchiere <span style="color: {3};">v{2}</span></h3>
+            <script>
+               var myws = new WebSocket(location.href.replace("http", "ws") + "wstest")
+               myws.onerror = ev => console.info(ev)
+               myws.onmessage = msg => console.log("RECEIVED: " + msg.data)
+            </script>
             '''
             contents = contents.format(randomcolor, bevanda, app.version, random.choice(["green", "red"]))
             info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
@@ -2362,14 +3043,15 @@ class Bicchiere(BicchiereMiddleware):
 
     def run(self, host="localhost", port=8086, application=None, server_name=None):
         application = application or self
-        server_name = server_name or 'wsgiref'
+        #server_name = server_name or 'wsgiref'
+        server_name = server_name or 'twserver'
         orig_server_name = server_name
         server_name = server_name.lower()
 
         if server_name not in self.known_wsgi_servers:
-            self.debug(
-                f"Server '{orig_server_name}' not known as of now. Switching to built-in WsgiRef")
-            server_name = 'wsgiref'
+            self.debug(f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
+            #server_name = 'wsgiref'
+            server_name = 'twserver'
 
         server = None
         server_action = None
@@ -2381,29 +3063,33 @@ class Bicchiere(BicchiereMiddleware):
                 def server_action(): return server.run(application, host, port)
             except Exception as exc:
                 print(f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
-                server_name = 'wsgiref'
+                server_name = 'twserver'
 
         if server_name == 'gunicorn':
             application.config['debug'] = False
             try:
                 from gunicorn.app.base import BaseApplication as server
-                def server_action(): return server(
-                    application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
+                def server_action(): return server(application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
             except Exception as exc:
                 print(f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
-                server_name = 'wsgiref'
+                server_name = 'twserver'
 
         if server_name == 'wsgiref':
             application.config['debug'] = True
             server = make_server(host, port, application)
             server_action = server.serve_forever
 
+        if server_name == 'twserver':
+            application.config['debug'] = True
+            server = make_server(host, port, application, server_class = TWServer)
+            server_action = server.serve_forever
+
         try:
             # server.serve_forever()
             print("\n\n", f"Running Bicchiere WSGI ({application.name}) version {Bicchiere.get_version()}",
-                  f"using {(server_name or 'wsgiref').capitalize()}",
-                  f"server on {host}:{port if port else ''}",
-                  f"\n Current working file: {os.path.abspath(__file__)}", "\n")
+                  f"using {(server_name or 'twserver').capitalize()}",
+                  f"server on {host}:{port if port else ''}")#,
+                  #f"\n Current working file: {os.path.abspath(__file__)}", "\n")
             server_action()
         except KeyboardInterrupt:
             print("\n\nBicchiere è uscito del palco...\n")
@@ -2413,8 +3099,8 @@ class Bicchiere(BicchiereMiddleware):
         finally:
             if hasattr(server, 'socket') and hasattr(server.socket, 'close'):
                 try:
-                    if self.session_manager and self.session_manager.clock:
-                        self.session_manager.clock.stop()
+                    #if self.session_manager and self.session_manager.clock:
+                    #    self.session_manager.clock.stop()
                     server.socket.close()
                     print("Socket chiuso.\n")
                 except:
@@ -2455,7 +3141,7 @@ def demo_app():
 application = demo_app()  # Rende uWSGI felice :-)
 
 
-def run(host='localhost', port=8086, app=application, server_name='wsgiref'):
+def run(host='localhost', port=8086, app=application, server_name='twserver'):
     "Shortcut to run demo app, or any WSGI compliant app, for that matter"
     runner = application
     runner.run(host, port, app, server_name)
@@ -2475,7 +3161,7 @@ def main():
                         default=8086, help="Server port number.")
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
-    parser.add_argument('-s', '--server', type=str, default="wsgiref",
+    parser.add_argument('-s', '--server', type=str, default="twserver",
                         help="Server software.", choices=Bicchiere.known_wsgi_servers)
     parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version")
 
