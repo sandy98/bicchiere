@@ -3,7 +3,7 @@ asgiref==3.5.2
 asttokens==2.0.8
 autopep8==1.7.0
 backcall==0.2.0
-bicchiere==0.12.2
+bicchiere==0.12.3
 bjoern==3.2.1
 bottle==0.12.23
 build==0.8.0
