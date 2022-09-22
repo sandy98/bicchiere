@@ -45,7 +45,10 @@ logging.basicConfig()
 # End of logging part
 
 
-# Websocket auxiliary classes
+# Websocket auxiliary classes and stuff
+
+_is_hop_by_hop = wsgiref.util.is_hop_by_hop
+wsgiref.util.is_hop_by_hop = lambda x: False
 
 class EventEmitter:
     """
@@ -519,7 +522,7 @@ class WebSocket:
 
         except ProtocolError as e:
             print('Protocol err', e)
-            self.close(1002, str(e).encode())
+            #self.close(1002, str(e).encode())
 
         except socket.timeout as e:
             print('timeout')
@@ -812,7 +815,8 @@ class BWebSocket(EventEmitter):
                 reason = buffer[2:].decode("utf-8")
             self.close(code, reason)
         else:
-            self.close(1002, "Unknown opcode")
+            #self.close(1002, "Unknown opcode")
+            logger.debug(f"Unknown opcode: {opcode}")
 
     def close(self, code: int = 1006, reason: str = ""):
         opcode = self.opcodes.CLOSE
@@ -1612,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 10, 5)
+    __version__ = (0, 11, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1939,25 +1943,27 @@ class Bicchiere(BicchiereMiddleware):
     def websocket_handler(self, func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if asyncio.iscoroutinefunction(func) is False:
-                raise WebSocketError(
-                    "Web socket handler must be an async coroutine.")
             known_versions = ('13', '8', '7')
             guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
             connection = self.environ.get("HTTP_CONNECTION")
-            if not connection or connection != "Upgrade":
+            if not connection or not "Upgrade" in connection:
+                self.debug(f'Error with HTTP_CONNECTION header: {repr(self.environ.get("HTTP_CONNECTION"))}')
                 return "Not a websocket request."
             upgrade = self.environ.get("HTTP_UPGRADE")
             if not upgrade or upgrade != "websocket":
+                self.debug(f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
                 return "Not a websocket request."
             wsversion = self.environ.get("HTTP_SEC_WEBSOCKET_VERSION")
             if not wsversion or wsversion not in known_versions:
+                self.debug(f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION"))}')
                 raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
             wskey = self.environ.get("HTTP_SEC_WEBSOCKET_KEY")
             if not wskey:
+                self.debug(f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_KEY"))}')
                 raise WebSocketError("Non existent websocket key.")
             key_len = len(base64.b64decode(wskey))
             if key_len != 16:
+                self.debug(f'Error with websocket key length (should be 16) but is {key_len}')
                 raise WebSocketError(f"Incorrect websocket key.")
             requested_protocols = self.environ.get(
                 'HTTP_SEC_WEBSOCKET_PROTOCOL', '')
@@ -1982,13 +1988,6 @@ class Bicchiere(BicchiereMiddleware):
                 (k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
             self.debug(f"Response headers for websocket:\n{final_headers}")
 
-            #self.writer = self.start_response("101 Switching protocols", [])
-            # headers_str = ""
-            # for k, v in final_headers:
-            #     headers_str += f"{k}: {v}\r\n"
-            # headers_str += "\r\n"
-            # self.writer(headers_str.encode("utf-8"))
-
             self.writer = self.start_response("101 Switching protocols", final_headers)
             self.writer(b"")
             self.headers_sent = True
@@ -2000,8 +1999,11 @@ class Bicchiere(BicchiereMiddleware):
             self.environ["wsgi.websocket"] = self.websocket
             self.environ["wsgi.version"] = wsversion
             # End of websocket creation part
-
-            retval = asyncio.run(func(*args, **kwargs))
+            retval = ""
+            if asyncio.iscoroutinefunction(func):
+                retval = asyncio.run(func(*args, **kwargs))
+            else:
+                retval = func(*args, **kwargs)
             return retval
 
         return wrapper
@@ -2095,7 +2097,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def environ(self):
-        return self.__local_data.environ
+        try:
+            return self.__local_data.environ
+        except:
+            return None
 
     @environ.setter
     def environ(self, new_env):
@@ -2105,9 +2110,12 @@ class Bicchiere(BicchiereMiddleware):
     def environ(self):
         del self.__local_data.environ
 
-    @property
+    @property 
     def _start_response(self):
-        return self.__local_data._start_response
+        try:
+            return self.__local_data._start_response
+        except:
+            return lambda *args, **kwargs: None
 
     @_start_response.setter
     def _start_response(self, new_sr):
@@ -2119,7 +2127,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def headers(self):
-        return self.__local_data.headers
+        try:
+            return self.__local_data.headers
+        except:
+            return Headers()
 
     @headers.setter
     def headers(self, new_h):
@@ -2131,7 +2142,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def session(self):
-        return self.__local_data.session
+        try:
+            return self.__local_data.session
+        except:
+            return None
 
     @session.setter
     def session(self, new_sess):
@@ -2143,7 +2157,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def cookies(self):
-        return self.__local_data.cookies
+        try:
+            return self.__local_data.cookies
+        except:
+            return SimpleCookie()
 
     @cookies.setter
     def cookies(self, new_c):
@@ -2155,7 +2172,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def args(self):
-        return self.__local_data.args
+        try:
+            return self.__local_data.args
+        except:
+            return None
 
     @args.setter
     def args(self, new_args):
@@ -2167,7 +2187,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def form(self):
-        return self.__local_data.form
+        try:
+            return self.__local_data.form
+        except:
+            return None
 
     @form.setter
     def form(self, new_form):
@@ -2179,7 +2202,10 @@ class Bicchiere(BicchiereMiddleware):
 
     @property
     def headers_sent(self):
-        return self.__local_data.headers_sent
+        try:
+            return self.__local_data.headers_sent
+        except:
+            return False
 
     @headers_sent.setter
     def headers_sent(self, new_hs):
@@ -2202,6 +2228,7 @@ class Bicchiere(BicchiereMiddleware):
 
     def clear_headers(self):
         self.headers = Headers()
+        self.headers_sent = False
 
 ####
 
@@ -2467,7 +2494,7 @@ class Bicchiere(BicchiereMiddleware):
 
         if response:
             response = self.tobytes(response)
-            self.debug(f"\n\nRESPONSE: '{response[ : 30].decode('utf-8')}...'")
+            self.debug(f"\n\nRESPONSE: '{response[ : 240].decode('utf-8')}{'...' if len(response) > 240 else ''}'")
             yield response
         else:
             yield b''
@@ -3446,10 +3473,8 @@ def main():
 
     os.system("clear")
     if __debug__:
-        _is_hop_by_hop = wsgiref.util.is_hop_by_hop
-        wsgiref.util.is_hop_by_hop = lambda x: False
         hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been modified"
-        #print(hop_modified)
+        logger.debug(hop_modified)
         #sleep(3)
     run(port=args.port, host=args.addr, server_name=args.server)
 

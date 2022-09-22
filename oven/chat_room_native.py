@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from cgitb import handler
 import os, json
 
 try:
@@ -23,6 +22,12 @@ except:
     print("You must run 'pip install bicchiere' prior to using this app")
     os.sys.exit(1)
 
+try:
+    from wsocket import WebSocket as WS
+    print("Using wsoket.WebSocket for real time connection.")
+except:
+    WS = None
+    print("You must run 'pip install wsocket' prior to using this feature")
 
 html = """
 
@@ -110,7 +115,7 @@ html = """
         var is_logged = {{ is_logged }};
         var txt_msg  = document.getElementById('txt_msg');
         var msg_list  = document.getElementById('msg_list');
-        var ws = new WebSocket(location.protocol == "https:" ? "wss" : "ws" + "://" + location.hostname + ":8088/messages")
+        var ws = new WebSocket(location.href.replace("http", "ws") + "messages")
         ws.onopen = function() {
             if (is_logged) {
               ws.send("Logged in at " + new Date().toLocaleString());
@@ -130,7 +135,7 @@ html = """
             }
         } )
         ws.onmessage = function(ev) {
-            // alert(ev.data);
+            console.log(ev.data);
             data = JSON.parse(ev.data);
             console.log(data);
             console.log("Received at " + new Date().toLocaleString());
@@ -177,7 +182,12 @@ class UserSocket:
             return False
 
 app = Bicchiere()
+
 app.config.session_class = SqliteSession
+#app.config.websocket_class = WS if WS else WebSocket
+app.config.websocket_class = WebSocket
+app.config.debug = True
+
 app.socks = set()
 app.msgs = []
 app.register_template_filter("isnone", isnone)
@@ -202,7 +212,7 @@ def login():
 
 @app.route('/messages')
 @app.websocket_handler
-async def ws_handler():
+def ws_handler():
     if not app.session.user:
         return app.redirect("/")
     wsock = app.environ.get('wsgi.websocket')
@@ -221,14 +231,17 @@ async def ws_handler():
         wsock.usercolor = app.session.usercolor
     while True:
         try:
-            msg = wsock.receive()
+            msg = wsock.socket.receive()
             if msg and len(msg):
+                app.debug(f"Received a message: {repr(msg)}")
                 fmsg = json.dumps(dict(user = wsock.user, msg = msg, usercolor = wsock.usercolor))
                 app.msgs.append(fmsg)
                 for wsk in app.socks:
                     wsk.socket.send(fmsg)
+            elif msg and not len(msg):
+                app.debug("Received an empty message. :-((")
         except WebSocketError as err:
-            print(f"Error in socket: {repr(err)}")
+            app.debug(f"Error in socket: {repr(err)}")
             app.socks.remove(wsock)
             break
 #        finally:
@@ -242,7 +255,10 @@ def main():
     try:
         #print("Serving http and websockets at port 8088.")
         #server.serve_forever()
-        app.run(host = "localhost", port = 8000, application=app,
+        os.system("clear")
+        #app.debug(f"Using web socket class: {'wsocket.WebSocket' if WS else 'bicchiere.WebSocket'}")
+        app.debug(f"Using web socket class: {'bicchiere.WebSocket'}")
+        app.run(host = "127.0.0.1", application=app,
         server_name="twserver", handler_class = FixedHandler, server_class = TWServer)
     except KeyboardInterrupt:
         print("\nServer exiting...")
