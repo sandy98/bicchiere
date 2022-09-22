@@ -1616,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 12, 3)
+    __version__ = (0, 12, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2869,7 +2869,8 @@ class Bicchiere(BicchiereMiddleware):
        <body style="color: blue; font-family: Helvetica; padding: 0.5em;">\n
        """)
 
-        response = simple_demo_app(self.environ, self.start_response)
+        #response = simple_demo_app(self.environ, self.start_response)
+        response = simple_demo_app(self.environ, lambda *args, **kw: None)
 
         for line in response:
             line = line.decode("utf-8").replace(
@@ -3007,7 +3008,7 @@ class Bicchiere(BicchiereMiddleware):
 
 
         @app.get('/')
-        @app.html_content()
+        #@app.html_content()
         def home():
             randomcolor = random.choice(
                 ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
@@ -3177,10 +3178,13 @@ class Bicchiere(BicchiereMiddleware):
                                              menu_content=str(menu),
                                              main_contents=info)
 
-        @app._any('/environ')
+        @app.get('/environ')
+        #@app.content_type("text/html")
+        #@app.html_content()
         def env():
             contents = ''.join([x for x in app.default_handler()])
             info = Bicchiere.get_demo_content().format(heading="", contents=contents)
+            #app.headers.add_header("Content-Type", "text/html", charset = "utf-8")
             return Bicchiere.render_template(demo_page_template,
                                              page_title="Demo Bicchiere App - Environment vars",
                                              menu_content=str(menu),
@@ -3462,7 +3466,10 @@ def main():
     parser.add_argument('-s', '--server', type=str, default="twserver",
                         help="Server software.", choices=Bicchiere.known_wsgi_servers)
     parser.add_argument('-V', '--version', action="store_true",
-                        help="Outputs Bicchiere version")
+                        help="Outputs Bicchiere version and quits")
+
+    parser.add_argument('-D', '--debug', action="store_true",
+                        help="Runs in debug mode")
 
     args = parser.parse_args()
 
@@ -3471,9 +3478,10 @@ def main():
         return
 
     os.system("clear")
-    if __debug__:
+    if args.debug:
         hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been modified"
         logger.debug(hop_modified)
+        Bicchiere.config.debug = True
         #sleep(3)
     run(port=args.port, host=args.addr, server_name=args.server)
 
