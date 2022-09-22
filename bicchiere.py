@@ -1616,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 11, 1)
+    __version__ = (0, 11, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1625,6 +1625,13 @@ class BicchiereMiddleware:
     known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
     bevande = ["Campari", "Negroni", "Vermut",
                "Bitter", "Birra"]  # Ma dai! Cos'e questo?
+
+
+    def debug(self, *args, **kw):
+        if hasattr(self, "config") and hasattr(self.config, "get"):
+            if self.config.get("debug"):
+                self.logger.setLevel(10)
+                self.logger.debug(*args, **kw)
 
     @staticmethod
     def is_html(fragment):
@@ -1775,6 +1782,7 @@ class BicchiereMiddleware:
     def __init__(self, application=None):
         self.application = application
         self.name = self.__class__.__name__
+        self.logger = logger
 
     def __call__(self, environ, start_response):
         self.environ = environ
@@ -1888,15 +1896,6 @@ class Bicchiere(BicchiereMiddleware):
     def version(self):
         major, minor, release = self.__version__
         return f"{major}.{minor}.{release}"
-
-    def debug(self, *args, **kw):
-        if hasattr(self, "config") and hasattr(self.config, "get"):
-            if self.config.get("debug"):
-                #print(f"Debug for {self.name} is active.")
-                #print(*args, **kw)
-                # pass
-                self.logger.setLevel(10)
-                self.logger.debug(*args, **kw)
 
     # def set_new_start_response(self, status="200 OK"):
     #     if not self._start_response:

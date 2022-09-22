@@ -248,10 +248,6 @@ def ws_handler():
 #            return "Websocket set, used and now is out."
 
 def main():
-    #server = WSGIServer(('0.0.0.0', 8088), app, handler_class=WebSocketHandler)
-    #server = WSGIServer(('0.0.0.0', 8088), app)
-    #server = make_server("0.0.0.0", 8088, app, handler_class=WebSocketHandler)
-    #server = make_server("0.0.0.0", 8088, app)
     try:
         #print("Serving http and websockets at port 8088.")
         #server.serve_forever()
