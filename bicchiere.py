@@ -1616,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 12, 5)
+    __version__ = (0, 12, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3077,7 +3077,7 @@ class Bicchiere(BicchiereMiddleware):
                myws.onclose = ev => console.log("Websocket is now closing :-( " + ev.data ? ev.data : ev)
                {6}
                if (location.href.indexOf("pythonanywhere") > -1)
-                 alert("Regretably websockets don't work in Pythonanywhere, so webchat functionality won't be available.\nSuggestion is installing the app and trying it locally, or in any websocket compliant server.");
+                 alert("Regretably websockets do not work in Pythonanywhere, so webchat functionality will not be available. Suggestion is installing the app and trying it locally, or in any websocket compliant server.");
             </script>
             '''
             contents = contents.format(randomcolor, 
