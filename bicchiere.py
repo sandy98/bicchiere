@@ -1616,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 12, 4)
+    __version__ = (0, 12, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1632,6 +1632,10 @@ class BicchiereMiddleware:
             if self.config.get("debug"):
                 self.logger.setLevel(10)
                 self.logger.debug(*args, **kw)
+
+    @staticmethod
+    def no_response(*args, **kwargs):
+        pass
 
     @staticmethod
     def is_html(fragment):
@@ -1851,7 +1855,7 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data = threading.local()
 
         self.__local_data.__dict__.setdefault('environ', None)
-        self.__local_data.__dict__.setdefault('_start_response', lambda *args, **kwargs: None)
+        self.__local_data.__dict__.setdefault('_start_response', self.no_response)
         self.__local_data.__dict__.setdefault('headers', Headers())
         self.__local_data.__dict__.setdefault('session', None)
         self.__local_data.__dict__.setdefault('cookies', SimpleCookie())
@@ -2204,7 +2208,7 @@ class Bicchiere(BicchiereMiddleware):
         try:
             return self.__local_data.headers_sent
         except:
-            return False
+            return True
 
     @headers_sent.setter
     def headers_sent(self, new_hs):
@@ -2987,25 +2991,37 @@ class Bicchiere(BicchiereMiddleware):
         @app.websocket_handler
         async def wstest():
             wsock = app.environ.get("wsgi.websocket")
+            if not wsock:
+                return "Something went awry, no websocket :-(( "
+            else:
+                app.debug("Got a shiny new websocket!")
             try:
                 wsock.send("Ciao, straniero!")
             except WebSocketError as wserr:
-                app.logger.debug(f"WebSocketError: {repr(wserr)}")
+                app.debug(f"WebSocketError: {repr(wserr)}")
                 return b''
-            
+            except Exception as exc:
+                app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
+                return b''
             while True:
                 try:
                     data = wsock.receive()
                     if data != None:
-                        for i in range(1, 4):
-                            wsock.send(f"ECHO number {i}:   {repr(data)}")
+                        for i in range(1, 3):
+                            dt = datetime.now()
+                            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")                    
+                            msg = f"\tECHO number {i} at ({sdate}):\t{repr(data)}"
+                            app.logger.info(msg)
+                            wsock.send(msg)
                             sleep(2)
                 except WebSocketError as wserr:
-                    app.logger.debug(f"WebSocketError: {repr(wserr)}")
+                    app.debug(f"WebSocketError: {repr(wserr)}")
                     break
-                finally:
-                    return b''
+                except Exception as exc:
+                    app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
+                    break
 
+            return b''
 
         @app.get('/')
         #@app.html_content()
@@ -3014,18 +3030,62 @@ class Bicchiere(BicchiereMiddleware):
                 ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
             #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
             heading = "WSGI, Bicchiere Flavor"
+            onkeyup = """
+               txt_chat.addEventListener("keyup", function(ev) {
+                 if (ev.keyCode != 13 || !ev.target.value.length || myws.readyState != 1)
+                   return false;
+                 myws.send(ev.target.value);
+                 ev.target.value = "";
+                 ev.target.focus();
+                 return true;
+               });
+            """
+            print_msg = """
+               function print_msg(msg) {
+                while (chat_msgs.childElementCount > 8)
+                  chat_msgs.removeChild(chat_msgs.firstChild);
+                var p = document.createElement("p");
+                p.innerText = msg;
+                chat_msgs.appendChild(p);
+                document.body.scrollTop = document.body.scrollHeight;
+               }
+            """
+            onmessage = """
+               myws.onmessage = function(ev) {
+                console.log("RECEIVED: " + ev.data ? ev.data : ev);
+                print_msg(ev.data ? ev.data : ev);
+               }
+            """
             contents = '''
             <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
             <h3>Portato cui da Bicchiere <span style="color: {3};">v{2}</span></h3>
+            <div id="chat_send">
+              <label for="txt_chat">Send message to Bicchiere echo server</label>
+              &nbsp;
+              <input type="text" name="txt_chat" id="txt_chat" style="height: 1.5em; margin-top: 10px; width: 80%; max-width: 80%; min-width: 80%;"/>
+            </div>
+            <div id="chat_msgs">
+            </div>
             <script>
+               var txt_chat = document.getElementById("txt_chat");
+               var chat_msgs = document.getElementById("chat_msgs");
+               {4}
+               {5}
                var myws = new WebSocket(location.href.replace("http", "ws") + "wstest")
                myws.onopen = ev => console.log("My beautiful websocket is open! : " + ev.data ? ev.data : ev)
                myws.onerror = ev => console.info(ev)
                myws.onclose = ev => console.log("Websocket is now closing :-( " + ev.data ? ev.data : ev)
-               myws.onmessage = ev => console.log("RECEIVED: " + ev.data ? ev.data : ev)
+               {6}
+               if (location.href.indexOf("pythonanywhere") > -1)
+                 alert("Regretably websockets don't work in Pythonanywhere, so webchat functionality won't be available.\nSuggestion is installing the app and trying it locally, or in any websocket compliant server.");
             </script>
             '''
-            contents = contents.format(randomcolor, bevanda, app.version, random.choice(["green", "red"]))
+            contents = contents.format(randomcolor, 
+            bevanda, 
+            app.version, 
+            random.choice(["green", "red"]),
+            onkeyup, print_msg, onmessage
+            )
             info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
             # return "{}{}{}".format(prefix, info, suffix)
             # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
