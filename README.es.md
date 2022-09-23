@@ -12,7 +12,7 @@ Siguiendo los pasos de [Flask](https://flask.palletsprojects.com/en/2.1.x/) y [B
 pip install bicchiere
 ```
 
-## [Aplicación de demostración del proyecto] (https://bicchiere.eu.pythonanywhere.com)
+## [Aplicación de demostración del proyecto](https://bicchiere.eu.pythonanywhere.com)
 
 Versión actual: 1.0.2
 
@@ -46,12 +46,12 @@ Entonces, ¿por qué Bicchiere?
 
 - Me gustan Flask and Bottle. Mucho. Ambos tienen cosas que aprecio mucho, la sencillez en el primero lugar. Pero no termina ahí.
 - También está el enfoque de archivo único/sin dependencias (Bottle), que pretendo imitar con Bicchiere. Aunque no es algo obligatorio, me gusta así.
-- Sesiones integradas (Flask). Aunque el usuario de la biblioteca debe ser libre de elegir lo que quiera con respecto a las sesiones o cualquier otro componente de la aplicación, creo que el manejo de sesiones es una de esas cosas imprescindibles en cualquier aplicación web en estos días. Entonces, proporcioné un mecanismo básico de manejo de sesión, en 3 variantes: memoria, sistema de archivos y sqlite. Esto fue lo máximo que se pudo hacer sin salirse de los límites de la biblioteca estándar de Python. Detalles sobre esto en [la wiki (en construcción)] (https://github.com/sandy98/bicchiere/wiki/Bicchiere-session)
+- Sesiones integradas (Flask). Aunque el usuario de la biblioteca debe ser libre de elegir lo que quiera con respecto a las sesiones o cualquier otro componente de la aplicación, creo que el manejo de sesiones es una de esas cosas imprescindibles en cualquier aplicación web en estos días. Entonces, proporcioné un mecanismo básico de manejo de sesión, en 3 variantes: memoria, sistema de archivos y sqlite. Esto fue lo máximo que se pudo hacer sin salirse de los límites de la biblioteca estándar de Python. Detalles sobre esto en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-session)
 - Mecanismo de plantilla incorporado (Bottle). Se aplican consideraciones similares. En mi opinión, esto también es imprescindible, independientemente de cuán micro sea el marco/biblioteca. Por otra parte, el usuario final debe ser libre de elegir. Como buen middleware compatible con WSGI, Bicchiere no se interpone en el camino del usuario si este prefiere usar [Mako](https://www.makotemplates.org/), [Jinja2](https://jinja.palletsprojects .com/en/3.1.x/), [Genshi](https://genshi.edgewall.org/) o lo que quiera. Detalles en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-templates)
 - Manejo de WebSockets: para mí, esta es la fruta del pastel, por varias razones:
     1. Se ha dicho que no se puede hacer bajo WSGI, razón de más para hacerlo.
     2. La comunicación en tiempo real parece otra necesidad imperiosa en el panorama actual del desarrollo de aplicaciones web.
     3. Por otra parte, es muy divertido. Mucho dolor también...
 En cualquier caso, Bicchiere viene con soporte nativo para WebSocket, recién sacado del horno :-))
-Detalles en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Lamentablemente, [la aplicación de demostración] (https://bicchiere.eu.pythonanywhere.com) no funcionará con websockets, porque **Pythonanywhere** aún no ha implementado la función. A partir de ahora, hay un espejo en [bicchiere.sytes.net](http://bicchiere.sytes.net) que funciona bien, prueba en la página de inicio y todo. En cualquier caso, estos problemas están relacionados con la configuración del proxy inverso y no tienen nada que ver con la aplicación/biblioteca en sí.
+Detalles en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Lamentablemente, [la aplicación de demostración](https://bicchiere.eu.pythonanywhere.com) no funcionará con websockets, porque **Pythonanywhere** aún no ha implementado la función. A partir de ahora, hay un espejo en [bicchiere.sytes.net](http://bicchiere.sytes.net) que funciona bien, prueba en la página de inicio y todo. En cualquier caso, estos problemas están relacionados con la configuración del proxy inverso y no tienen nada que ver con la aplicación/biblioteca en sí.
 - Y aún así, hay muchas cosas que mencionar. Más por venir...
