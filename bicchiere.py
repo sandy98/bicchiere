@@ -1616,7 +1616,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (0, 12, 8)
+    __version__ = (1, 0, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1787,6 +1787,8 @@ class BicchiereMiddleware:
         self.application = application
         self.name = self.__class__.__name__
         self.logger = logger
+        self.path_prefix = ""
+        self.mounted_apps = dict()
 
     def __call__(self, environ, start_response):
         self.environ = environ
@@ -1799,8 +1801,14 @@ class BicchiereMiddleware:
         else:
             start_response(
                 "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
-            yield str(self).encode("utf-8")
-            return b""
+            return [b"", str(self).encode("utf-8")]
+
+
+    def mount(self, mount_point: str, app) -> None:
+        if app is self:
+            raise ValueError("An app can't be mounted on itself.")
+        app.path_prefix = mount_point
+        self.mounted_apps[mount_point] = app
 
     def __str__(self):
         return f"{self.__class__.__name__} v. {Bicchiere.get_version()}"
@@ -1865,8 +1873,10 @@ class Bicchiere(BicchiereMiddleware):
 
 
 
-    def __init__(self, name=None, **kwargs):
+    def __init__(self, name=None, application = None, **kwargs):
         "Prepares Bicchiere instance to run"
+
+        super().__init__(application)
 
         # Register some common template filter functions
         if Bicchiere.config['pre_load_default_filters']:
@@ -1877,7 +1887,7 @@ class Bicchiere(BicchiereMiddleware):
 
         # First, things that don't vary through calls
         self.name = name if name else random.choice(Bicchiere.bevande)
-        self.logger = logger
+        #self.logger = logger
         self.session_class = Bicchiere.config['session_class']
         if not self.session_class.secret:
             self.session_class.secret = uuid4().hex
@@ -2361,7 +2371,7 @@ class Bicchiere(BicchiereMiddleware):
 
         response = None
         #status_msg = "404 Not found"
-        status_msg = Bicchiere.get_status_line(404)
+        status_msg = Bicchiere.get_status_line(200)
 
         static_root = Bicchiere.config.get('static_directory', 'static')
         static_path = f'/{static_root}'
@@ -2434,10 +2444,11 @@ class Bicchiere(BicchiereMiddleware):
 
             #self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
+            retval = b""
             for i in range(len(response)):
-                yield self.tobytes(response[i])
+                retval += self.tobytes(response[i])
             self.clear_headers()
-            return b''
+            return retval
 
         if len(self.routes) == 0:
             if self.environ['path_info'.upper()] != '/':
@@ -2453,7 +2464,9 @@ class Bicchiere(BicchiereMiddleware):
         else:
             route = None
             try:
-                route = self.get_route_match(self.environ['PATH_INFO'])
+#               full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
+                full_path = self.environ['PATH_INFO']
+                route = self.get_route_match(full_path)
                 if route:
                     if self.environ.get('REQUEST_METHOD', 'GET') in route.methods:
                         status_msg = Bicchiere.get_status_line(200)
@@ -2469,12 +2482,22 @@ class Bicchiere(BicchiereMiddleware):
                                        <span style="color: red;">{self.environ["REQUEST_METHOD"]}</span>
                                        not allowed for this URL.'''
                 else:
-                    del self.headers['Content-Type']
-                    self.headers.add_header(
-                        'Content-Type', 'text/html', charset="utf-8")
-                    #self.set_new_start_response()
-                    status_msg = Bicchiere.get_status_line(404)
-                    response = f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
+                    for r, app in self.mounted_apps.items():
+                        if full_path.startswith(r):
+                            self.debug(f"found path prefix {r} in mounted app.")
+                            new_env = self.environ.copy()
+                            mounted_path = full_path.replace(r, '')
+                            if not mounted_path.startswith("/"):
+                                mounted_path = f"/{mounted_path}"
+                            new_env['PATH_INFO'] = mounted_path
+                            response = app(new_env, 
+                            self.no_response if app is not self else start_response)
+                            break
+                    if not response:
+                        del self.headers['Content-Type']
+                        self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
+                        status_msg = Bicchiere.get_status_line(404)
+                        response = f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ["PATH_INFO"]}</span> not found.'''
             except Exception as exc:
                 del self.headers['Content-Type']
@@ -2495,20 +2518,20 @@ class Bicchiere(BicchiereMiddleware):
                 #self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
 
+        retval = b""
+
         if response:
             response = self.tobytes(response)
             self.debug(f"\n\nRESPONSE: '{response[ : 240].decode('utf-8')}{'...' if len(response) > 240 else ''}'")
-            yield response
-        else:
-            yield b''
+            retval = response
 
         self.clear_headers()
-        return b''
+        return [retval]
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
+        #path = path.replace(self.path_prefix, "") # Added to support mounted apps
         for route in self.routes:
-            # for route_pattern, view_function, methods, type_dict in self.routes:
             r = route.match(path)
             if r:
                 return r
@@ -2915,14 +2938,52 @@ class Bicchiere(BicchiereMiddleware):
             return False
 
     @classmethod
-    def demo_app(cls):
-        bevanda = random.choice(Bicchiere.bevande)
+    def tre_stanze(cls):
+        acasa = cls("Casa")
+        acocina = cls("Cocina")
+        acomedor = cls("Comedor")
 
+        #acasa.config.debug = True
+        #acasa.mount("/cocina", acocina)
+        #acasa.mount("/comedor", acomedor)
+
+        @acasa.get("/")
+        def casa():
+            return "Esta es la casa."
+
+        @acocina.get("/")
+        def cocina():
+            return "Esta es la cocina."
+
+        @acocina.get("/show")
+        def cocina():
+            return "<h1>Vi mostro la cucina</h1>"
+
+        @acomedor.get("/")
+        def comedor():
+            return "Este es el comedor."
+
+        return acasa, acocina, acomedor
+
+    @classmethod
+    def demo_app(cls):
+        is_local = "ernesto" in os.getcwd()
+        bevanda = random.choice(cls.bevande)
         FileSession.secret = "20181209"
         app = cls(f"Demo {bevanda} App")
         app.config.debug = False
         app.config.allow_directory_listing = True
         app.config.session_class = FileSession
+        if is_local:
+            try:
+                #from oven.mount_test import cocina, comedor, casa
+                acasa, acocina, acomedor = cls.tre_stanze() 
+                app.mount("/cocina", acocina)
+                app.mount("/comedor", acomedor)
+                app.mount("/casa", acasa)
+            except:
+                pass
+
         #app.config.debug = True
 
         # prefix = Bicchiere.get_demo_prefix().format(normalize_css = Bicchiere.get_normalize_css(),
