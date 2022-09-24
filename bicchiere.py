@@ -249,7 +249,7 @@ class FrameTooLargeException(ProtocolError):
     Raised if a frame is received that is too large.
     """
 
-class WebSocket:
+class WebSocket(EventEmitter):
     """
     Base class for supporting websocket operations.
     """
@@ -301,6 +301,14 @@ class WebSocket:
             self.compressor = zlib.compressobj(7, zlib.DEFLATED,
                                                -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+        self.onerror = partial(self.on, "error")
+        self.onmessage = partial(self.on, "message")
+        self.onclose = partial(self.on, "close")
+
+    def heartbeat(self):
+        dt = datetime.now()
+        sdate = dt.strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")                    
+        self.send_frame(sdate, self.OPCODE_PING)
 
     def on_open(self, message, **options):
         return message, options
@@ -368,7 +376,7 @@ class WebSocket:
         self.send_frame(payload, self.OPCODE_PONG)
 
     def handle_pong(self, payload):
-        pass
+        logger.info(f"Received PONG frame with payload: {repr(payload)}")
 
     def mask_payload(self, mask, length, payload):
         payload = bytearray(payload)
@@ -666,181 +674,6 @@ class WebSocket:
             self.read = None
             self.environ = None
 
-
-
-class BWebSocket(EventEmitter):
-    """Implements a WebSocket connection"""
-
-    masks = SuperDict(
-        FIN_MASK=0x80,
-        OPCODE_MASK=0x0f,
-        MASK_MASK=0x80,
-        LENGTH_MASK=0x7f,
-
-        RSV0_MASK=0x40,
-        RSV1_MASK=0x20,
-        RSV2_MASK=0x10,
-    )
-
-    # bitwise mask that will determine the reserved bits for a frame header
-    masks.HEADER_FLAG_MASK = masks.RSV0_MASK | masks.RSV1_MASK | masks.RSV2_MASK
-
-    opcodes = SuperDict({
-        "TEXT": 0x01,
-        "BINARY": 0x02,
-        "CLOSE": 0x08,
-        "PING": 0x09,
-        "PONG": 0x0a
-    })
-
-    def __init__(self, environ: dict = None, stream: Stream = None, name='WebSocket'):
-        super().__init__(name)
-        self.environ = environ if environ else {}
-        self.stream = stream if stream else Stream(os.sys.stdin, os.sys.stdout)
-
-        self.buffer = bytearray()
-        self.closed = False
-
-        self.onmessage = partial(self.on, "message")
-        self.onopen = partial(self.on, "open")
-        self.onerror = partial(self.on, "error")
-        self.onclose = partial(self.on, "close")
-
-        self.emit("open", (self.stream.input.fileno(),
-                  self.stream.input.fileno()))
-
-    def send(self, data):
-        opcode = None
-        payload = None
-
-        datatype = type(data)
-        if datatype == bytes or datatype == bytearray:
-            opcode = self.opcodes.BINARY
-            payload = data
-        elif datatype == str:
-            opcode = self.opcodes.TEXT
-            payload = bytearray(data.encode("utf-8"))
-        else:
-            self.error(f"Cannot send {repr(data)}. Must be string or bytes.")
-
-        return self._doSend(opcode, payload)
-
-    @classmethod
-    def encodeMessage(cls, opcode, payload):
-        buf = None
-        b1 = cls.masks.FIN_MASK | opcode
-        b2 = 0
-        length = len(payload)
-        if length < 126:
-            buf = bytearray(len(payload) + 2 + 0)  # 0 extra bytes
-            b2 |= length
-            buf = struct.pack("!H", b1)
-            buf[1:] = struct.pack("!H", b2)
-            buf[2:] = payload
-        elif length < (1 << 16):
-            buf = bytearray(len(payload) + 2 + 2)  # 2 extra bytes
-            b2 |= 126
-            buf = struct.pack("!H", b1)
-            buf[1:] = struct.pack("!H", b2)
-            buf[4:] = payload
-        else:
-            buf = bytearray(len(payload) + 2 + 8)  # 8 extra bytes
-            b2 |= 127
-            buf = struct.pack("!H", b1)
-            buf[1:] = struct.pack("!H", b2)
-            buf[2:] = struct.pack("!H", 0)
-            buf[6:] = struct.pack("!H", length)
-            buf[10:] = payload
-
-        return buf
-
-    @staticmethod
-    def unmask(maskBytes, data):
-        payload = bytearray(len(data))
-        for i in range(len(data)):
-            payload[i] = maskBytes[i % 4] ^ data[i]
-        return payload
-
-    def _doSend(self, opcode, payload):
-        self.stream.write(self.encodeMessage(opcode, payload))
-
-    def recv(self, bufsize=4096):
-        return self.stream.read(bufsize)
-
-    def _processBuffer(self):
-        buf = self.buffer
-        if len(buf) < 2:
-            # Not yet enought data
-            return False
-        idx = 2
-        b1 = struct.unpack("!H", buf)
-        fin = b1 & self.masks.FIN_MASK
-        opcode = b1 & self.masks.OPCODE_MASK
-        b2 = struct.unpack("!H", buf[1:])
-        mask = b2 & self.masks.FIN_MASK
-        length = b2 & self.masks.LENGTH_MASK
-        if length > 125:
-            if len(buf) < 8:
-                # Not yet enought data
-                return False
-        if length == 126:
-            length = struct.unpack("!H", buf[2:])
-            idx += 2
-        elif length == 127:
-            # Discard high 4 bits because this WebSocket cannot handle huge lengths
-            highBits = struct.unpack("!H", buf[2:])
-            if highBits != 0:
-                self.close(1009, "")
-                return False
-            length = struct.unpack("i", buf[6:])
-            idx += 8
-        if len(buf) < idx + 4 + length:
-            # Not yet enought data
-            return False
-        maskBytes = buf[idx:idx + 4]
-        idx += 4
-        payload = buf[idx:idx + length]
-        self._handleFrame(opcode, payload)
-        self.buffer = buf[idx+length:]
-        return True
-
-    def _handleFrame(self, opcode, buffer):
-        code, reason = None, None
-        if opcode == self.opcodes.TEXT:
-            payload = buffer.decode("utf-8")
-            self.emit("data", opcode, payload)
-        elif opcode == self.opcodes.BINARY:
-            payload = buffer
-            self.emit("data", opcode, payload)
-        elif opcode == self.opcodes.PING:
-            self._doSend(self.opcodes.PONG, buffer)
-        elif opcode == self.opcodes.PONG:
-            pass
-        elif opcode == self.opcodes.CLOSE:
-            if len(buffer) >= 2:
-                code = struct.unpack("!H", buffer)
-                reason = buffer[2:].decode("utf-8")
-            self.close(code, reason)
-        else:
-            #self.close(1002, "Unknown opcode")
-            logger.debug(f"Unknown opcode: {opcode}")
-
-    def close(self, code: int = 1006, reason: str = ""):
-        opcode = self.opcodes.CLOSE
-        if not self.closed:
-            payload = bytearray(len(reason) + 2)
-            payload[0:2] = struct.pack("!H", code)
-            payload[2:] = reason.encode("utf-8")
-            self._doSend(opcode, payload)
-            self.stream.close()
-            self.closed = True
-            self.emit("close", dict(code=code, reason=reason))
-
-    def error(self, message):
-        self.emit("error", message)
-        self.close()
-        return ValueError(message)
-
 # End of websocket auxiliary classes
 
 
@@ -1096,10 +929,28 @@ class TemplateLight:
         self._code = code
         self._render_function = code.get_globals()['render_function']
 
-    def _is_variable(self, name):
-        pattrn = r"(?P<varname>[_a-zA-Z][_a-zA-Z0-9]*)(?P<subscript>\[(?P<subvar>.+)\])?$"
+    @staticmethod
+    def _is_string(name):
+        pattrn = r"""^(\"|\')(.*?)\1$"""
         return re.match(pattrn, name)
 
+    @staticmethod
+    def _is_reserved(name):
+        if name == "true":
+            name = "True"
+        if name == "false":
+            name = "False"
+#        if name == "null" or name == "nil":
+#            name = "None"
+        return name in ["|", "if", "else", "and", "or", "not", "in", "is", "True", "False", "None"]
+
+    @staticmethod
+    def _is_variable(name):
+        if TemplateLight._is_reserved(name) or TemplateLight._is_string(name):
+            return False
+        pattrn = r"(?P<varname>[_a-zA-Z][_a-zA-Z0-9]*)(?P<subscript>\[(?P<subvar>.+)\])?$"
+        return re.match(pattrn, name)
+    
     def _variable(self, name, vars_set):
         """Track that `name` is used as a variable.
         Adds the name to `vars_set`, a set of variable names.
@@ -1116,7 +967,8 @@ class TemplateLight:
 
     def _expr_code(self, expr):
         """Generate a Python expression for `expr`."""
-        if "|" in expr:
+        nonisobar = r"[^\s]\|[^\s]"
+        if re.findall(nonisobar, expr):
             pipes = expr.split("|")
             code = self._expr_code(pipes[0])
             for func in pipes[1:]:
@@ -1623,7 +1475,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 0, 7)
+    __version__ = (1, 0, 8)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3065,8 +2917,21 @@ class Bicchiere(BicchiereMiddleware):
                 return "Something went awry, no websocket :-(( "
             else:
                 app.debug("Got a shiny new websocket!")
+            
+            def do_hb():
+                while True:
+                    try:
+                        sleep(1)
+                        wsock.heartbeat()
+                    except Exception as exc:
+                        app.debug(f"Exception ocurred during heartbeat loop: {repr(exc)}")
+                        return
+
             try:
                 wsock.send("Ciao, straniero!")
+                hbt = threading.Thread(target = do_hb, name="h_b_thread", args = ())
+                hbt.setDaemon(True)
+                hbt.start()
             except WebSocketError as wserr:
                 app.debug(f"WebSocketError: {repr(wserr)}")
                 return b''
