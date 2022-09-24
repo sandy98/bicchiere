@@ -60,6 +60,13 @@ class EventEmitter:
         self.name = name
         self.event_handlers = {}
 
+    def __iadd__(self, t: tuple):
+        if (type(t)) != tuple or len(t) != 2 or type(t[0]) != str or t[1].__class__.__name__ != "function":
+            raise ValueError("Bad parameters for event handler")
+        self.on(t[0], t[1])
+        #print("New event handler has been added")
+        return self
+
     def __repr__(self):
         return f"""
                 Name:           {self.name}
@@ -612,7 +619,7 @@ class WebSocket:
         try:
             self.write(bytes(header + message))
 
-        except socket.error as e:
+        except socket_error as e:
             raise WebSocketError(self.MSG_SOCKET_DEAD + " : " + str(e))
 
     def send(self, message, binary=None, do_compress=True):
@@ -1616,7 +1623,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 0, 3)
+    __version__ = (1, 0, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3043,7 +3050,9 @@ class Bicchiere(BicchiereMiddleware):
 
         dropdown = DropdownMenu("Downloads")
         dropdown.addItem(
-            MenuItem("Chat Room Websockets Example App", "/downlchatroom"))
+            MenuItem("Chat Room Websockets Example App - gevent version", "/downlchatroom?version=gevent"))
+        dropdown.addItem(
+            MenuItem("Chat Room Websockets Example App - Bicchiere Websocket version", "/downlchatroom?version=native"))
         menu.addItem(dropdown)
 
         menu.addItem(MenuItem("About", "/about"))
@@ -3260,8 +3269,13 @@ class Bicchiere(BicchiereMiddleware):
         # @app.content_type('text/x-python')
         @app.custom_header("Content-Disposition", "attachment", filename="chat_room.py")
         def downlchatroom():
-            contents = urllib.request.urlopen(
-                "https://raw.githubusercontent.com/sandy98/bicchiere/main/oven/chat_room.py").read()
+            version = app.args.get("version", "native")
+            url = f"https://raw.githubusercontent.com/sandy98/bicchiere/main/oven/chat_room_{version}.py"
+            try:
+                contents = urllib.request.urlopen(url).read()
+            except Exception as exc:
+                app.debug(f"Exception downloading URL {url}: {repr(exc)}")
+                raise exc
             return contents
 
         @app.get("/showstatic")

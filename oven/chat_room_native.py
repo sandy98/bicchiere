@@ -240,6 +240,8 @@ def ws_handler():
                     wsk.socket.send(fmsg)
             elif msg and not len(msg):
                 app.debug("Received an empty message. :-((")
+            app.debug("Now pinging the client to keep him alive...")
+            wsock.socket.send_frame("Ping", wsock.socket.OPCODE_PING)
         except WebSocketError as err:
             app.debug(f"Error in socket: {repr(err)}")
             app.socks.remove(wsock)
