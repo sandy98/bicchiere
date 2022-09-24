@@ -1021,15 +1021,15 @@ class TemplateLight:
                 elif words[0] == 'elif':
                     # An elif statement: evaluate the expression to determine else.
                     #print("Uso de 'else' en el template detectado.")
-                    if len(words) != 2:
-                        self._syntax_error("Don't understand elif", token)
+                    #if len(words) != 2:
+                    #    self._syntax_error("Don't understand elif", token)
                     if not ops_stack:
                         self._syntax_error(
-                            "'Elif' without previous 'if'", token)
+                            "'elif' without previous 'if'", token)
                     start_what = ops_stack.pop()
                     if (start_what != "if"):
                         self._syntax_error(
-                            "'Elif' without previous 'if'", token)
+                            "'elif' without previous 'if'", token)
                     ops_stack.append('if')
                     code.dedent()
                     code.add_line("elif {0}:".format(
@@ -1623,7 +1623,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 0, 6)
+    __version__ = (1, 0, 7)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
