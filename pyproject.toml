@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]   
 name = "bicchiere"
-version = "1.0.5"
+version = "1.0.6"
 description = "Yet another python web (WSGI) micro-framework"
 readme = "README.md"
 authors = [{ name = "Domingo E Savoretti", email = "esavoretti@gmail.com" }]

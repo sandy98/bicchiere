@@ -25,9 +25,9 @@ def cleaning_src():
 def update_version():
     time.sleep(1)
     print("Updating bicchiere version.")
-    os.system(f"sed -i 's/Current version: {oversion}/Current version: {version}/' README.md")
-    os.system(f"sed -i 's/Current version: {oversion}/Current version: {version}/' README.it.md")
-    os.system(f"sed -i 's/Current version: {oversion}/Current version: {version}/' README.es.md")
+    os.system(f"sed -i 's/: {oversion}/: {version}/' README.md")
+    os.system(f"sed -i 's/: {oversion}/: {version}/' README.it.md")
+    os.system(f"sed -i 's/: {oversion}/: {version}/' README.es.md")
     os.system(f"sed -i 's/{omajor}, {ominor}, {orevision}/{major}, {minor}, {revision}/' bicchiere.py")
     os.system(f"sed -i 's/version = \"{oversion}\"/version = \"{version}\"/' pyproject.toml")
 
