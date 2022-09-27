@@ -317,7 +317,6 @@ class WebSocket:
     """
     Base class for supporting websocket operations.
     """
-    logger = logging.getLogger("WebSocket")
 
     OPCODE_CONTINUATION = 0x00
     OPCODE_TEXT = 0x01
@@ -344,7 +343,7 @@ class WebSocket:
     protocol = None
     version = None
     path = None
-    logger = logger
+    logger = logging.getLogger("WebSocket")
 
     def __init__(self, environ, read, write, handler, do_compress):
         self.environ = environ
@@ -355,19 +354,19 @@ class WebSocket:
         self.do_compress = do_compress
         self.origin = self.environ.get(
             "HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
-        self.protocols = list(
-            map(str.strip,
-                self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL",
+        self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL",
                                  "").split(",")))
-        self.version = int(
-            self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
+        self.version = int(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
         self.path = self.environ.get("PATH_INFO", "/")
         if do_compress:
             self.compressor = zlib.compressobj(7, zlib.DEFLATED,
                                                -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
 
+        self.default_handler = self.logger.info
+
         self.onopen = Event(self, "open")
+        self.onopen += partial(self.default_handler, "WebSocket Opened")
         self.onerror = Event(self, "error")
         self.onmessage = Event(self, "message")
         self.onclose = Event(self, "close")
@@ -1535,7 +1534,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 0, 9)
+    __version__ = (1, 1, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
