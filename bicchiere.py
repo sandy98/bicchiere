@@ -50,54 +50,118 @@ logging.basicConfig()
 _is_hop_by_hop = wsgiref.util.is_hop_by_hop
 wsgiref.util.is_hop_by_hop = lambda x: False
 
-class EventEmitter:
-    """
-    Utility class for adding objects the ability to emit events and registering handlers. 
-    Meant to be used as a mixin.
-    """
 
-    def __init__(self, name='EventEmitter'):
-        self.name = name
-        self.event_handlers = {}
+# class EventEmitter:
+#     """
+#     Utility class for adding objects the ability to emit events and registering handlers. 
+#     Meant to be used as a mixin.
+#     """
 
-    def __iadd__(self, t: tuple):
-        if (type(t)) != tuple or len(t) != 2 or type(t[0]) != str or t[1].__class__.__name__ != "function":
-            raise ValueError("Bad parameters for event handler")
-        self.on(t[0], t[1])
-        #print("New event handler has been added")
+#     def __init__(self, name='EventEmitter'):
+#         self.name = name
+#         self.event_handlers = {}
+
+#     def __iadd__(self, t: tuple):
+#         if (type(t)) != tuple or len(t) != 2 or type(t[0]) != str or t[1].__class__.__name__ != "function":
+#             raise ValueError("Bad parameters for event handler")
+#         self.on(t[0], t[1])
+#         #print("New event handler has been added")
+#         return self
+
+#     def __repr__(self):
+#         return f"""
+#                 Name:           {self.name}
+#                 Handlers:       {self.event_handlers.items()}
+#                 """
+
+#     def __str__(self):
+#         return repr(self)
+
+#     def emit(self, event_name="change", event_data={}):
+#         if event_name not in self.event_handlers:
+#             self.event_handlers[event_name] = []
+#         for evh in self.event_handlers[event_name]:
+#             evh(self, event_name, event_data)
+
+#     def on(self, event_name, callback):
+#         uid = uuid4().hex
+#         callback.id = uid
+#         if event_name not in self.event_handlers:
+#             self.event_handlers[event_name] = []
+#         self.event_handlers[event_name].append(callback)
+
+#         def off_event():
+#             for i, evh in enumerate(self.event_handlers[event_name]):
+#                 if evh.id == uid:
+#                     self.event_handlers[event_name].pop(i)
+#                     break
+
+#         off_event.id = uid
+
+#         return off_event
+
+class EventArg:
+    "Simple class for passing packed event arguments to handlers"
+
+    __slots__ = ["target", "type", "data"]
+
+    def __init__(self, target = None, type = "change", data = None):
+        self.target = target
+        self.type = type
+        self.data = data
+
+class Event:
+    """
+    Class to manage event handlers and emit events on behalf of their source (target)
+    Not meant to be used as a mixin, but to be included in a 'has a' relationship.
+    Mainly, to implement 'onxxx' handlers.
+    """
+    def __init__(self, event_target, event_type: str):
+        self.event_target = event_target
+        self.event_type = event_type
+        self.event_handlers = []
+        self.cancel_handlers = []
+
+    def subscribe(self, handler):
+        if not callable(handler):
+            raise ArgumentError("Event handler must be a callable object")
+        fid = uuid4().hex
+        handler.fid = fid
+        def off():
+            for index, handler in enumerate(self.event_handlers):
+                if handler.fid == fid:
+                    return self.event_handlers.pop(index)
+            return None
+
+        off.fid = fid
+        self.event_handlers.append(handler)
+        self.cancel_handlers.append(off)
+        return off
+
+    def unsubscribe(self, fid: str = ""):
+        if not fid:
+            self.event_handlers = []
+            self.cancel_handlers = []
+            return None
+        for index, cancel_handler in enumerate(self.cancel_handlers):
+            if cancel_handler.fid == fid:
+                event_handler = cancel_handler()
+                self.cancel_handlers.pop(index)
+                return event_handler
+        return None
+
+    def __iadd__(self, handler):
+        self.subscribe(handler)
         return self
 
-    def __repr__(self):
-        return f"""
-                Name:           {self.name}
-                Handlers:       {self.event_handlers.items()}
-                """
+    def __isub__(self, fid):
+        self.unsubscribe(fid)
+        return self
 
-    def __str__(self):
-        return repr(self)
-
-    def emit(self, event_name="change", event_data={}):
-        if event_name not in self.event_handlers:
-            self.event_handlers[event_name] = []
-        for evh in self.event_handlers[event_name]:
-            evh(self, event_name, event_data)
-
-    def on(self, event_name, callback):
-        uid = uuid4().hex
-        callback.id = uid
-        if event_name not in self.event_handlers:
-            self.event_handlers[event_name] = []
-        self.event_handlers[event_name].append(callback)
-
-        def off_event():
-            for i, evh in enumerate(self.event_handlers[event_name]):
-                if evh.id == uid:
-                    self.event_handlers[event_name].pop(i)
-                    break
-
-        off_event.id = uid
-
-        return off_event
+    def emit(self, data = None):
+        arg = EventArg(target = self.event_target, type = self.event_type, data = data)
+        for handler in self.event_handlers:
+            handler(arg)
 
 
 
@@ -128,6 +192,7 @@ class FixedServerHandler(ServerHandler):
     val=self._convert_string_type(val,"Header value")
   self.send_headers()
   return self.write
+
 
 class FixedHandler(WSGIRequestHandler): 
  def address_string(self): 
@@ -185,7 +250,6 @@ class SuperDict(dict):
             return value
         else:
             return None
-
 
 
 class Stream:
@@ -249,10 +313,11 @@ class FrameTooLargeException(ProtocolError):
     Raised if a frame is received that is too large.
     """
 
-class WebSocket(EventEmitter):
+class WebSocket:
     """
     Base class for supporting websocket operations.
     """
+    logger = logging.getLogger("WebSocket")
 
     OPCODE_CONTINUATION = 0x00
     OPCODE_TEXT = 0x01
@@ -301,23 +366,18 @@ class WebSocket(EventEmitter):
             self.compressor = zlib.compressobj(7, zlib.DEFLATED,
                                                -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
-        self.onerror = partial(self.on, "error")
-        self.onmessage = partial(self.on, "message")
-        self.onclose = partial(self.on, "close")
 
+        self.onopen = Event(self, "open")
+        self.onerror = Event(self, "error")
+        self.onmessage = Event(self, "message")
+        self.onclose = Event(self, "close")
+        self.onping = Event(self, "ping")
+        self.onpong = Event(self, "pong")
+        
     def heartbeat(self):
         dt = datetime.now()
         sdate = dt.strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")                    
         self.send_frame(sdate, self.OPCODE_PING)
-
-    def on_open(self, message, **options):
-        return message, options
-
-    def on_close(self, message, **options):
-        return message, options
-
-    def on_message(self, message, **options):
-        return message, options
 
     def __del__(self):
         try:
@@ -524,30 +584,29 @@ class WebSocket(EventEmitter):
         the socket is considered closed/errored.
         """
         if self.closed:
-            print('Receive closed')
-            self.on_close(self.MSG_ALREADY_CLOSED)
-            raise WebSocketError(self.MSG_ALREADY_CLOSED)
+            self.logger.debug('Receive closed')
+            err_already_closed = WebSocketError(self.MSG_ALREADY_CLOSED)
+            self.onerror.emit(err_already_closed)
+            raise err_already_closed
             #return None
         try:
             return self.read_message()
-
         except UnicodeError as e:
-            print('UnicodeDecodeError')
-            self.close(1007, str(e).encode())
-
+            self.logger.debug('UnicodeDecodeError')
+            self.close(1007, str(e).encode("utf-8"))
+            self.onclose.emit(str(e).encode("utf-8"))
         except ProtocolError as e:
-            print('Protocol err', e)
-            #self.close(1002, str(e).encode())
-
+            self.logger.debug(f'Protocol err: {repr(e)}')
+            self.close(1002, str(e).encode())
+            self.onclose.emit(self.MSG_CLOSED)
         except socket.timeout as e:
-            print('timeout')
+            self.logger.debug('Socket timeout')
             self.close(message=str(e))
-            self.on_close(self.MSG_CLOSED)
-
+            self.onclose.emit(str(e))
         except socket.error as e:
-            print('spcket err')
+            self.logger.debug(f'Spcket error: {repr(e)}')
             self.close(message=str(e))
-            self.on_close(self.MSG_CLOSED)
+            self.onclose.emit(self.MSG_CLOSED)
 
         return None
 
@@ -597,8 +656,8 @@ class WebSocket(EventEmitter):
 
     def send_frame(self, message, opcode, do_compress=False):
         if self.closed:
-            print('receive closed')
-            self.on_close(self.MSG_ALREADY_CLOSED)
+            self.logger.debug('Receive closed')
+            self.onclose.emit(self.MSG_ALREADY_CLOSED)
             raise WebSocketError(self.MSG_ALREADY_CLOSED)
 
         if not message:
@@ -644,7 +703,8 @@ class WebSocket(EventEmitter):
             self.send_frame(message, opcode, do_compress)
 
         except WebSocketError:
-            self.on_close(self.MSG_SOCKET_DEAD)
+            self.logger.debug(f"Socket already closed: {repr(self.MSG_ALREADY_CLOSED)}")
+            self.onclose.emit(self.MSG_SOCKET_DEAD)
             raise WebSocketError(self.MSG_SOCKET_DEAD)
 
     def close(self, code=1000, message=b""):
@@ -655,8 +715,8 @@ class WebSocket(EventEmitter):
         """
         print("close called")
         if self.closed:
-            print('receive closed')
-            self.on_close(self.MSG_ALREADY_CLOSED)
+            self.logger.debug('Receive closed')
+            self.onclose.emit(self.MSG_ALREADY_CLOSED)
 
         try:
             message = self._encode_bytes(message)
@@ -1475,7 +1535,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 0, 8)
+    __version__ = (1, 0, 9)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
