@@ -53,7 +53,7 @@ wsgiref.util.is_hop_by_hop = lambda x: False
 
 # class EventEmitter:
 #     """
-#     Utility class for adding objects the ability to emit events and registering handlers. 
+#     Utility class for adding objects the ability to emit events and registering handlers.
 #     Meant to be used as a mixin.
 #     """
 
@@ -105,10 +105,11 @@ class EventArg:
 
     __slots__ = ["target", "type", "data"]
 
-    def __init__(self, target = None, type = "change", data = None):
+    def __init__(self, target=None, type="change", data=None):
         self.target = target
         self.type = type
         self.data = data
+
 
 class Event:
     """
@@ -116,6 +117,7 @@ class Event:
     Not meant to be used as a mixin, but to be included in a 'has a' relationship.
     Mainly, to implement 'onxxx' handlers.
     """
+
     def __init__(self, event_target, event_type: str):
         self.event_target = event_target
         self.event_type = event_type
@@ -127,6 +129,7 @@ class Event:
             raise ArgumentError("Event handler must be a callable object")
         fid = uuid4().hex
         handler.fid = fid
+
         def off():
             for index, handler in enumerate(self.event_handlers):
                 if handler.fid == fid:
@@ -158,66 +161,73 @@ class Event:
         self.unsubscribe(fid)
         return self
 
-    def emit(self, data = None):
-        arg = EventArg(target = self.event_target, type = self.event_type, data = data)
+    def emit(self, data=None):
+        arg = EventArg(target=self.event_target,
+                       type=self.event_type, data=data)
         for handler in self.event_handlers:
             handler(arg)
 
 
+class FixedServerHandler(ServerHandler):
+    http_version = "1.1"
 
-class FixedServerHandler(ServerHandler): 
- http_version="1.1" 
- def _convert_string_type(self,value,title): 
-  if isinstance(value,str):
-   return value
-  raise AssertionError("{0} must be of type str (got {1})".format(title,repr(value)))
- def start_response(self,status,headers,exc_info=None):
-  if exc_info:
-   try:
-    if self.headers_sent:
-     raise exc_info[0](exc_info[1]).with_traceback(exc_info[2])
-   finally:
-    exc_info=None 
-  elif self.headers is not None:
-   raise AssertionError("Headers already set!")
-  self.status=status
-  self.headers=self.headers_class(headers)
-  status=self._convert_string_type(status,"Status")
-  assert len(status)>=4,"Status must be at least 4 characters"
-  assert status[:3].isdigit(),"Status message must begin w/3-digit code"
-  assert status[3]==" ","Status message must have a space after code"
-  if __debug__:
-   for name,val in headers:
-    name=self._convert_string_type(name,"Header name")
-    val=self._convert_string_type(val,"Header value")
-  self.send_headers()
-  return self.write
+    def _convert_string_type(self, value, title):
+        if isinstance(value, str):
+            return value
+        raise AssertionError(
+            "{0} must be of type str (got {1})".format(title, repr(value)))
+
+    def start_response(self, status, headers, exc_info=None):
+        if exc_info:
+            try:
+                if self.headers_sent:
+                    raise exc_info[0](exc_info[1]).with_traceback(exc_info[2])
+            finally:
+                exc_info = None
+        elif self.headers is not None:
+            raise AssertionError("Headers already set!")
+        self.status = status
+        self.headers = self.headers_class(headers)
+        status = self._convert_string_type(status, "Status")
+        assert len(status) >= 4, "Status must be at least 4 characters"
+        assert status[:3].isdigit(), "Status message must begin w/3-digit code"
+        assert status[3] == " ", "Status message must have a space after code"
+        if __debug__:
+            for name, val in headers:
+                name = self._convert_string_type(name, "Header name")
+                val = self._convert_string_type(val, "Header value")
+        self.send_headers()
+        return self.write
 
 
-class FixedHandler(WSGIRequestHandler): 
- def address_string(self): 
-  return self.client_address[0]
- def log_request(self,*args,**kw):
-  try:
-   if not getattr(self,"quit",False):
-    return WSGIRequestHandler.log_request(self,*args,**kw)
-  except:
-   pass
- def get_app(self):
-  return self.server.get_app()
- def handle(self): 
-  self.raw_requestline=self.rfile.readline(65537)
-  if len(self.raw_requestline)>65536:
-   self.requestline=""
-   self.request_version=""
-   self.command=""
-   self.send_error(414)
-   return
-  if not self.parse_request(): 
-   return
-  handler=FixedServerHandler(self.rfile,self.wfile,self.get_stderr(),self.get_environ())
-  handler.request_handler=self 
-  handler.run(self.get_app())
+class FixedHandler(WSGIRequestHandler):
+    def address_string(self):
+        return self.client_address[0]
+
+    def log_request(self, *args, **kw):
+        try:
+            if not getattr(self, "quit", False):
+                return WSGIRequestHandler.log_request(self, *args, **kw)
+        except:
+            pass
+
+    def get_app(self):
+        return self.server.get_app()
+
+    def handle(self):
+        self.raw_requestline = self.rfile.readline(65537)
+        if len(self.raw_requestline) > 65536:
+            self.requestline = ""
+            self.request_version = ""
+            self.command = ""
+            self.send_error(414)
+            return
+        if not self.parse_request():
+            return
+        handler = FixedServerHandler(
+            self.rfile, self.wfile, self.get_stderr(), self.get_environ())
+        handler.request_handler = self
+        handler.run(self.get_app())
 
 
 class SuperDict(dict):
@@ -297,6 +307,7 @@ class Stream:
         except:
             pass
 
+
 class WebSocketError(socket_error):
     """
     Base class for all websocket errors.
@@ -312,6 +323,7 @@ class FrameTooLargeException(ProtocolError):
     """
     Raised if a frame is received that is too large.
     """
+
 
 class WebSocket:
     """
@@ -338,7 +350,6 @@ class WebSocket:
     MSG_ALREADY_CLOSED = "Connection is already closed"
     MSG_CLOSED = "Connection closed"
 
-
     origin = None
     protocol = None
     version = None
@@ -355,8 +366,9 @@ class WebSocket:
         self.origin = self.environ.get(
             "HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
         self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL",
-                                 "").split(",")))
-        self.version = int(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
+                                                              "").split(",")))
+        self.version = int(self.environ.get(
+            "HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
         self.path = self.environ.get("PATH_INFO", "/")
         if do_compress:
             self.compressor = zlib.compressobj(7, zlib.DEFLATED,
@@ -372,11 +384,12 @@ class WebSocket:
         self.onclose = Event(self, "close")
         self.onping = Event(self, "ping")
         self.onpong = Event(self, "pong")
-        
+
     def heartbeat(self):
-        dt = datetime.now()
-        sdate = dt.strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")                    
-        self.send_frame(sdate, self.OPCODE_PING)
+        #dt = datetime.now()
+        #sdate = dt.strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")
+        #self.send_frame(sdate, self.OPCODE_PING)
+        self.send_frame(str(Bicchiere.millis()), self.OPCODE_PING)
 
     def __del__(self):
         try:
@@ -407,7 +420,8 @@ class WebSocket:
         # valid hybi close code?
         if (code < 1000 or 1004 <= code <= 1006 or 1012 <= code <= 1016
                 or code ==
-                1100  # not sure about this one but the autobahn fuzzer requires it.
+                # not sure about this one but the autobahn fuzzer requires it.
+                1100
                 or 2000 <= code <= 2999):
             return False
 
@@ -435,7 +449,10 @@ class WebSocket:
         self.send_frame(payload, self.OPCODE_PONG)
 
     def handle_pong(self, payload):
-        logger.info(f"Received PONG frame with payload: {repr(payload)}")
+        current_millis = Bicchiere.millis()
+        prev_millis = int(payload)
+        roundtrip = current_millis - prev_millis
+        logger.info(f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
 
     def mask_payload(self, mask, length, payload):
         payload = bytearray(payload)
@@ -587,7 +604,7 @@ class WebSocket:
             err_already_closed = WebSocketError(self.MSG_ALREADY_CLOSED)
             self.onerror.emit(err_already_closed)
             raise err_already_closed
-            #return None
+            # return None
         try:
             return self.read_message()
         except UnicodeError as e:
@@ -702,7 +719,8 @@ class WebSocket:
             self.send_frame(message, opcode, do_compress)
 
         except WebSocketError:
-            self.logger.debug(f"Socket already closed: {repr(self.MSG_ALREADY_CLOSED)}")
+            self.logger.debug(
+                f"Socket already closed: {repr(self.MSG_ALREADY_CLOSED)}")
             self.onclose.emit(self.MSG_SOCKET_DEAD)
             raise WebSocketError(self.MSG_SOCKET_DEAD)
 
@@ -913,7 +931,7 @@ class TemplateLight:
                 elif words[0] == 'elif':
                     # An elif statement: evaluate the expression to determine else.
                     #print("Uso de 'else' en el template detectado.")
-                    #if len(words) != 2:
+                    # if len(words) != 2:
                     #    self._syntax_error("Don't understand elif", token)
                     if not ops_stack:
                         self._syntax_error(
@@ -1009,7 +1027,7 @@ class TemplateLight:
             return False
         pattrn = r"(?P<varname>[_a-zA-Z][_a-zA-Z0-9]*)(?P<subscript>\[(?P<subvar>.+)\])?$"
         return re.match(pattrn, name)
-    
+
     def _variable(self, name, vars_set):
         """Track that `name` is used as a variable.
         Adds the name to `vars_set`, a set of variable names.
@@ -1534,7 +1552,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 1, 3)
+    __version__ = (1, 1, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1544,12 +1562,15 @@ class BicchiereMiddleware:
     bevande = ["Campari", "Negroni", "Vermut",
                "Bitter", "Birra"]  # Ma dai! Cos'e questo?
 
-
     def debug(self, *args, **kw):
         if hasattr(self, "config") and hasattr(self.config, "get"):
             if self.config.get("debug"):
                 self.logger.setLevel(10)
                 self.logger.debug(*args, **kw)
+
+    @staticmethod
+    def millis():
+        return round(datetime.now().timestamp() * 1000.0)
 
     @staticmethod
     def no_response(*args, **kwargs):
@@ -1721,7 +1742,6 @@ class BicchiereMiddleware:
                 "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
             return [b"", str(self).encode("utf-8")]
 
-
     def mount(self, mount_point: str, app) -> None:
         if app is self:
             raise ValueError("An app can't be mounted on itself.")
@@ -1745,8 +1765,8 @@ class BicchiereMiddleware:
         if self.application:
             return self.application.run(*args, **kwargs)
         else:
-            self.debug(f"{self.name} was meant as middleware, therefore it will not run stand alone")
-
+            self.debug(
+                f"{self.name} was meant as middleware, therefore it will not run stand alone")
 
     def start_response(self, status="200", headers=[]):
         if self.headers_sent:
@@ -1756,7 +1776,7 @@ class BicchiereMiddleware:
 
         if isinstance(headers, (dict, Headers)):
             headers = list(headers.items())
-            
+
 #        if self.code in self.bad_headers:
 #            bad_headers = self.bad_headers[self.code]
 #            headers = [h for h in headers if h[0] not in bad_headers]
@@ -1781,7 +1801,8 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data = threading.local()
 
         self.__local_data.__dict__.setdefault('environ', None)
-        self.__local_data.__dict__.setdefault('_start_response', self.no_response)
+        self.__local_data.__dict__.setdefault(
+            '_start_response', self.no_response)
         self.__local_data.__dict__.setdefault('headers', Headers())
         self.__local_data.__dict__.setdefault('session', None)
         self.__local_data.__dict__.setdefault('cookies', SimpleCookie())
@@ -1789,9 +1810,7 @@ class Bicchiere(BicchiereMiddleware):
         self.__local_data.__dict__.setdefault('form', None)
         self.__local_data.__dict__.setdefault('headers_sent', False)
 
-
-
-    def __init__(self, name=None, application = None, **kwargs):
+    def __init__(self, name=None, application=None, **kwargs):
         "Prepares Bicchiere instance to run"
 
         super().__init__(application)
@@ -1863,7 +1882,7 @@ class Bicchiere(BicchiereMiddleware):
     def redirect(self, path, status_code=302, status_msg="Found"):
         self.headers.add_header('Location', path)
         status_line = f"{status_code} {status_msg}"
-        #self.set_new_start_response(status=status_line)
+        # self.set_new_start_response(status=status_line)
         self.start_response(status_line, self.headers.items())
         return [status_line.encode("utf-8")]
 
@@ -1878,55 +1897,65 @@ class Bicchiere(BicchiereMiddleware):
             guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
             connection = self.environ.get("HTTP_CONNECTION")
             if not connection or not "Upgrade" in connection:
-                self.debug(f'Error with HTTP_CONNECTION header: {repr(self.environ.get("HTTP_CONNECTION"))}')
+                self.debug(
+                    f'Error with HTTP_CONNECTION header: {repr(self.environ.get("HTTP_CONNECTION"))}')
                 return "Not a websocket request."
             upgrade = self.environ.get("HTTP_UPGRADE")
             if not upgrade or upgrade != "websocket":
-                self.debug(f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
+                self.debug(
+                    f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
                 return "Not a websocket request."
             wsversion = self.environ.get("HTTP_SEC_WEBSOCKET_VERSION")
             if not wsversion or wsversion not in known_versions:
-                self.debug(f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION"))}')
-                raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
+                self.debug(
+                    f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION"))}')
+                raise WebSocketError(
+                    f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
             wskey = self.environ.get("HTTP_SEC_WEBSOCKET_KEY")
             if not wskey:
-                self.debug(f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_KEY"))}')
+                self.debug(
+                    f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_KEY"))}')
                 raise WebSocketError("Non existent websocket key.")
             key_len = len(base64.b64decode(wskey))
             if key_len != 16:
-                self.debug(f'Error with websocket key length (should be 16) but is {key_len}')
+                self.debug(
+                    f'Error with websocket key length (should be 16) but is {key_len}')
                 raise WebSocketError(f"Incorrect websocket key.")
             requested_protocols = self.environ.get(
                 'HTTP_SEC_WEBSOCKET_PROTOCOL', '')
             protocol = None if not requested_protocols else re.split(
                 r"/s*,/s*", requested_protocols)[0]
             extensions = list(map(lambda ext: ext.split(";")[0].strip(),
-                    self.environ.get("HTTP_SEC_WEBSOCKET_EXTENSIONS", "").split(",")))
+                                  self.environ.get("HTTP_SEC_WEBSOCKET_EXTENSIONS", "").split(",")))
 
             do_compress = "permessage-deflate" in extensions
 
-            accept = base64.b64encode(hashlib.sha1((wskey + guid).encode("latin-1")).digest()).decode("latin-1")
-            headers = [("Upgrade", "websocket"), 
-                        ("Connection", "Upgrade"), 
-                        ("Sec-WebSocket-Accept", accept)]
+            accept = base64.b64encode(hashlib.sha1(
+                (wskey + guid).encode("latin-1")).digest()).decode("latin-1")
+            headers = [("Upgrade", "websocket"),
+                       ("Connection", "Upgrade"),
+                       ("Sec-WebSocket-Accept", accept)]
             if protocol:
                 headers.append(("Sec-WebSocket-Protocol", protocol))
 
             if do_compress:
-                headers.append(("Sec-WebSocket-Extensions", "permessage-deflate"))
+                headers.append(
+                    ("Sec-WebSocket-Extensions", "permessage-deflate"))
 
             final_headers = [
                 (k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
             self.debug(f"Response headers for websocket:\n{final_headers}")
 
-            self.writer = self.start_response("101 Switching protocols", final_headers)
+            self.writer = self.start_response(
+                "101 Switching protocols", final_headers)
             self.writer(b"")
             self.headers_sent = True
             self._start_response = lambda *args, **kw: None
             # Create the websocket object and update environ
             self.reader = self.environ.get("wsgi.input").read
             websocket_class = self.config.get("websocket_class")
-            self.websocket = websocket_class(self.environ.copy(), self.reader, self.writer, self, do_compress)
+            self.websocket = websocket_class(
+                self.environ.copy(), self.reader, self.writer, self, do_compress)
             self.environ["wsgi.websocket"] = self.websocket
             self.environ["wsgi.version"] = wsversion
             # End of websocket creation part
@@ -1944,6 +1973,7 @@ class Bicchiere(BicchiereMiddleware):
 
 # Content decorators
 
+
     def content_type(self, c_type="text/html", charset="utf-8", **attrs):
         def decorator(func):
             @wraps(func)
@@ -1951,7 +1981,7 @@ class Bicchiere(BicchiereMiddleware):
                 del self.headers['Content-Type']
                 self.headers.add_header(
                     'Content-Type', c_type, charset=charset, **attrs)
-                #self.set_new_start_response()
+                # self.set_new_start_response()
                 #self.start_response("200 OK", self.headers.items())
                 return func(*args, **kwargs)
             return wrapper
@@ -1974,7 +2004,7 @@ class Bicchiere(BicchiereMiddleware):
                     self.debug(f"Trying to set content type to {filetype}")
                     self.headers.add_header(
                         'Content-Type', filetype, charset=charset)
-                #self.set_new_start_response()
+                # self.set_new_start_response()
                 #self.start_response("200 OK", self.headers.items())
                 return func(*args, **kwargs)
             return wrapper
@@ -2041,7 +2071,7 @@ class Bicchiere(BicchiereMiddleware):
     def environ(self):
         del self.__local_data.environ
 
-    @property 
+    @property
     def _start_response(self):
         try:
             return self.__local_data._start_response
@@ -2360,7 +2390,7 @@ class Bicchiere(BicchiereMiddleware):
                     'Content-Type', 'text/html', charset='utf-8')
                 status_msg = Bicchiere.get_status_line(404)
 
-            #self.set_new_start_response()
+            # self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
             retval = b""
             for i in range(len(response)):
@@ -2373,7 +2403,7 @@ class Bicchiere(BicchiereMiddleware):
                 del self.headers['Content-Type']
                 self.headers.add_header(
                     'Content-Type', 'text/html', charset="utf-8")
-                #self.set_new_start_response()
+                # self.set_new_start_response()
                 response = f"404 {self.environ['path_info'.upper()]} not found."
             else:
                 #status_msg = "200 OK"
@@ -2382,7 +2412,7 @@ class Bicchiere(BicchiereMiddleware):
         else:
             route = None
             try:
-#               full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
+                #               full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
                 full_path = self.environ['PATH_INFO']
                 route = self.get_route_match(full_path)
                 if route:
@@ -2393,7 +2423,7 @@ class Bicchiere(BicchiereMiddleware):
                         del self.headers['Content-Type']
                         self.headers.add_header(
                             'Content-Type', 'text/html', charset="utf-8")
-                        #self.set_new_start_response()
+                        # self.set_new_start_response()
                         #status_msg = f'405 {self.get_status_codes()["405"]["status_msg"]}'
                         status_msg = Bicchiere.get_status_line(405)
                         response = f'''<strong>405</strong>&nbsp;&nbsp;&nbsp;Method&nbsp;
@@ -2402,18 +2432,20 @@ class Bicchiere(BicchiereMiddleware):
                 else:
                     for r, app in self.mounted_apps.items():
                         if full_path.startswith(r):
-                            self.debug(f"found path prefix {r} in mounted app.")
+                            self.debug(
+                                f"found path prefix {r} in mounted app.")
                             new_env = self.environ.copy()
                             mounted_path = full_path.replace(r, '')
                             if not mounted_path.startswith("/"):
                                 mounted_path = f"/{mounted_path}"
                             new_env['PATH_INFO'] = mounted_path
-                            response = app(new_env, 
-                            self.no_response if app is not self else start_response)
+                            response = app(new_env,
+                                           self.no_response if app is not self else start_response)
                             break
                     if not response:
                         del self.headers['Content-Type']
-                        self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
+                        self.headers.add_header(
+                            'Content-Type', 'text/html', charset="utf-8")
                         status_msg = Bicchiere.get_status_line(404)
                         response = f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ["PATH_INFO"]}</span> not found.'''
@@ -2421,7 +2453,7 @@ class Bicchiere(BicchiereMiddleware):
                 del self.headers['Content-Type']
                 self.headers.add_header(
                     'Content-Type', 'text/html', charset="utf-8")
-                #self.set_new_start_response()
+                # self.set_new_start_response()
                 status_msg = Bicchiere.get_status_line(500)
                 response = f'''<strong>500</strong>&nbsp;&nbsp;&nbsp;
                                  <span style="color: red;">{self.environ["PATH_INFO"]}</span>
@@ -2430,17 +2462,20 @@ class Bicchiere(BicchiereMiddleware):
         if not self.headers_sent:
             if 'content-type' not in self.headers:
                 if response and self.is_html(response):
-                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset='utf-8')
                 else:
-                    self.headers.add_header('Content-Type', 'text/plain', charset='utf-8')
-                #self.set_new_start_response()
+                    self.headers.add_header(
+                        'Content-Type', 'text/plain', charset='utf-8')
+                # self.set_new_start_response()
             self.start_response(status_msg, self.headers.items())
 
         retval = b""
 
         if response:
             response = self.tobytes(response)
-            self.debug(f"\n\nRESPONSE: '{response[ : 240].decode('utf-8')}{'...' if len(response) > 240 else ''}'")
+            self.debug(
+                f"\n\nRESPONSE: '{response[ : 240].decode('utf-8')}{'...' if len(response) > 240 else ''}'")
             retval = response
 
         self.clear_headers()
@@ -2448,7 +2483,7 @@ class Bicchiere(BicchiereMiddleware):
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
-        #path = path.replace(self.path_prefix, "") # Added to support mounted apps
+        # path = path.replace(self.path_prefix, "") # Added to support mounted apps
         for route in self.routes:
             r = route.match(path)
             if r:
@@ -2805,7 +2840,7 @@ class Bicchiere(BicchiereMiddleware):
     def default_handler(self):
         del self.headers['content-type']
         self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
-        #self.set_new_start_response()
+        # self.set_new_start_response()
 
         final_response = []
         final_response.append("""
@@ -2895,7 +2930,7 @@ class Bicchiere(BicchiereMiddleware):
         if is_local:
             try:
                 #from oven.mount_test import cocina, comedor, casa
-                acasa, acocina, acomedor = cls.tre_stanze() 
+                acasa, acocina, acomedor = cls.tre_stanze()
                 app.mount("/cocina", acocina)
                 app.mount("/comedor", acomedor)
                 app.mount("/casa", acasa)
@@ -2976,19 +3011,21 @@ class Bicchiere(BicchiereMiddleware):
                 return "Something went awry, no websocket :-(( "
             else:
                 app.debug("Got a shiny new websocket!")
-            
+
             def do_hb():
                 while True:
                     try:
                         sleep(1)
                         wsock.heartbeat()
                     except Exception as exc:
-                        app.debug(f"Exception ocurred during heartbeat loop: {repr(exc)}")
+                        app.debug(
+                            f"Exception ocurred during heartbeat loop: {repr(exc)}")
                         return
 
             try:
                 wsock.send("Ciao, straniero!")
-                hbt = threading.Thread(target = do_hb, name="h_b_thread", args = ())
+                hbt = threading.Thread(
+                    target=do_hb, name="h_b_thread", args=())
                 hbt.setDaemon(True)
                 hbt.start()
             except WebSocketError as wserr:
@@ -3003,7 +3040,7 @@ class Bicchiere(BicchiereMiddleware):
                     if data != None:
                         for i in range(1, 3):
                             dt = datetime.now()
-                            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")                    
+                            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
                             msg = f"\tECHO number {i} at ({sdate}):\t{repr(data)}"
                             app.logger.info(msg)
                             wsock.send(msg)
@@ -3018,7 +3055,7 @@ class Bicchiere(BicchiereMiddleware):
             return b''
 
         @app.get('/')
-        #@app.html_content()
+        # @app.html_content()
         def home():
             randomcolor = random.choice(
                 ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
@@ -3074,12 +3111,12 @@ class Bicchiere(BicchiereMiddleware):
                  alert("Regretably websockets do not work in Pythonanywhere, so webchat functionality will not be available. Suggestion is installing the app and trying it locally, or in any websocket compliant server.");
             </script>
             '''
-            contents = contents.format(randomcolor, 
-            bevanda, 
-            app.version, 
-            random.choice(["green", "red"]),
-            onkeyup, print_msg, onmessage
-            )
+            contents = contents.format(randomcolor,
+                                       bevanda,
+                                       app.version,
+                                       random.choice(["green", "red"]),
+                                       onkeyup, print_msg, onmessage
+                                       )
             info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
             # return "{}{}{}".format(prefix, info, suffix)
             # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
@@ -3238,8 +3275,8 @@ class Bicchiere(BicchiereMiddleware):
                                              main_contents=info)
 
         @app.get('/environ')
-        #@app.content_type("text/html")
-        #@app.html_content()
+        # @app.content_type("text/html")
+        # @app.html_content()
         def env():
             contents = ''.join([x for x in app.default_handler()])
             info = Bicchiere.get_demo_content().format(heading="", contents=contents)
@@ -3404,7 +3441,8 @@ class Bicchiere(BicchiereMiddleware):
         server_name = server_name.lower()
 
         if server_name not in self.known_wsgi_servers:
-            self.debug( f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
+            self.debug(
+                f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
             #server_name = 'wsgiref'
             server_name = 'twserver'
 
@@ -3440,7 +3478,8 @@ class Bicchiere(BicchiereMiddleware):
         if server_name == 'twserver':
             #application.config['debug'] = True
             server = make_server(host, port, application,
-                                 server_class=options.get("server_class") or TWServer, 
+                                 server_class=options.get(
+                                     "server_class") or TWServer,
                                  handler_class=options.get("handler_class") or FixedHandler)
             server_action = server.serve_forever
 
@@ -3541,7 +3580,7 @@ def main():
         hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been modified"
         logger.debug(hop_modified)
         Bicchiere.config.debug = True
-        #sleep(3)
+        # sleep(3)
     run(port=args.port, host=args.addr, server_name=args.server)
 
 
