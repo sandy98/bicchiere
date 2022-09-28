@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 1, 5)
+    __version__ = (1, 1, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1713,9 +1713,9 @@ class BicchiereMiddleware:
         route_regex = re.sub(param_regex, regex_parser, route)
         return re.compile("^{}$".format(route_regex)), dict(zip(params, params_types))
 
-    def __init__(self, application=None):
+    def __init__(self, application=None, name = None):
         self.application = application
-        self.name = self.__class__.__name__
+        self.name = name or self.__class__.__name__
         self.logger = logger
         self.path_prefix = ""
         self.mounted_apps = dict()
@@ -1727,10 +1727,9 @@ class BicchiereMiddleware:
         self.environ["wsgi_middleware"] = str(self)
 
         if self.application:
-            return self.application(environ, start_response)
+            return self.application(self.environ.copy(), self.start_response)
         else:
-            start_response(
-                "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
+            start_response("200 OK", [('Content-Type', 'text/html; charset=utf-8')])
             return [b"", str(self).encode("utf-8")]
 
     def mount(self, mount_point: str, app) -> None:
@@ -3051,10 +3050,12 @@ class Bicchiere(BicchiereMiddleware):
             """
             print_msg = """
                function print_msg(msg) {
-                while (chat_msgs.childElementCount > 8)
+                while (chat_msgs.childElementCount > 7)
                   chat_msgs.removeChild(chat_msgs.firstChild);
                 var p = document.createElement("p");
                 p.innerText = msg;
+                p.style.padding = "3px" 
+                p.style.height = "1em"
                 chat_msgs.appendChild(p);
                 document.body.scrollTop = document.body.scrollHeight;
                }
@@ -3068,12 +3069,14 @@ class Bicchiere(BicchiereMiddleware):
             contents = '''
             <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
             <h3>Portato cui da Bicchiere <span style="color: {3};">v{2}</span></h3>
+            <p><a href="https://pepy.tech/project/bicchiere" rel="nofollow"><img src="https://camo.githubusercontent.com/ae674753cc9add64c74e64cc453a1997d2ea7e8a9009068a1f84eccd8f9634f0/68747470733a2f2f706570792e746563682f62616467652f626963636869657265" alt="Downloads" data-canonical-src="https://pepy.tech/badge/bicchiere" style="max-width: 100%;"></a></p>
+            <hr>
             <div id="chat_send">
               <label for="txt_chat">Send message to Bicchiere echo server</label>
               &nbsp;
-              <input type="text" name="txt_chat" id="txt_chat" style="height: 1.5em; margin-top: 10px; width: 80%; max-width: 80%; min-width: 80%;"/>
+              <input type="text" name="txt_chat" id="txt_chat" style="height: 1.5em; margin-top: 10px; width: 50%; max-width: 50%; min-width: 80%;"/>
             </div>
-            <div id="chat_msgs">
+            <div id="chat_msgs" style="background: black; color: white;">
             </div>
             <script>
                var txt_chat = document.getElementById("txt_chat");
@@ -3373,6 +3376,7 @@ class Bicchiere(BicchiereMiddleware):
         @app.get("/about")
         def about():
             contents = """
+            <p>
             Lorem ipsum dolor sit amet consectetur adipisicing elit. Maxime mollitia,
             molestiae quas vel sint commodi repudiandae consequuntur voluptatum laborum
             numquam blanditiis harum quisquam eius sed odit fugiat iusto fuga praesentium
@@ -3394,6 +3398,10 @@ class Bicchiere(BicchiereMiddleware):
             modi minima sunt esse temporibus sint culpa, recusandae aliquam numquam 
             totam ratione voluptas quod exercitationem fuga. Possimus quis earum veniam 
             quasi aliquam eligendi, placeat qui corporis!
+            </p>
+            <p  style="text-align: right;">
+              <a href="https://pepy.tech/project/bicchiere" rel="nofollow"><img src="https://camo.githubusercontent.com/ae674753cc9add64c74e64cc453a1997d2ea7e8a9009068a1f84eccd8f9634f0/68747470733a2f2f706570792e746563682f62616467652f626963636869657265" alt="Downloads" data-canonical-src="https://pepy.tech/badge/bicchiere" style="max-width: 100%;"></a>
+            </p>
             """
             info = Bicchiere.get_demo_content().format(
                 heading="The proverbial about page", contents=contents)
