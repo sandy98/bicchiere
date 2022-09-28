@@ -1543,12 +1543,12 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 1, 6)
+    __version__ = (1, 1, 7)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
-    known_wsgi_servers = ['twserver', 'gunicorn',
-                          'bjoern', 'wsgiref', 'waitress', 'uwsgi']
+    known_wsgi_servers = ['twserver', 'gunicorn', 'whypercorn',
+                          'bjoern', 'wsgiref', 'waitress', 'uwsgi', 'gevent']
     known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
     bevande = ["Campari", "Negroni", "Vermut",
                "Bitter", "Birra"]  # Ma dai! Cos'e questo?
@@ -3435,38 +3435,113 @@ class Bicchiere(BicchiereMiddleware):
         server = None
         server_action = None
 
+        if server_name == 'whypercorn':
+            try:
+                from hypercorn.config import Config
+                config = Config()
+                config.bind = [f"{host}:{port}"]
+                from hypercorn.asyncio import serve
+                def server_action(): 
+                    return asyncio.run(serve(application, config))
+            except ImportError:
+                print("Module 'hypercorn' not installed.\nRun 'python -m pip install hypercorn' prior to using this server.")
+                os.sys.exit()
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start Waitress: {str(exc)}")
+                os.sys.exit()
+
+        if server_name == 'waitress':
+            try:
+                import waitress as server
+                def server_action(): 
+                    return server.serve(application, listen=f"{host}:{port}")
+            except ImportError:
+                print("Module 'waitress' not installed.\nRun 'python -m pip install waitress' prior to using this server.")
+                os.sys.exit()
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start Waitress: {str(exc)}")
+                os.sys.exit()
+
         if server_name == 'bjoern':
-            application.config['debug'] = False
             try:
                 import bjoern as server
-                def server_action(): return server.run(application, host, port)
+                def server_action(): 
+                    return server.run(application, host, port)
+            except ImportError:
+                print("Module 'bjoern' not installed.\nRun 'python -m pip install bjoern' prior to using this server.")
+                os.sys.exit()
             except Exception as exc:
-                print(
-                    f"Exception ocurred while trying to raise Bjoern: {str(exc)}")
-                server_name = 'twserver'
+                print(f"Exception ocurred while trying to start Bjoern: {str(exc)}")
+                os.sys.exit()
+
+        if server_name == 'gevent':
+            try:
+                from gevent.pywsgi import WSGIServer as GWSGIServer
+                #from geventwebsocket import WebSocketError as GWebSocketError, websocket as GWebSocket
+                #from geventwebsocket.handler import WebSocketHandler as GWebSocketHandler
+                def server_action():
+                    #application.config.websocket_class = GWebSocket
+                    application.config.websocket_class = WebSocket
+                    #server = GWSGIServer((host, port), application, handler_class=GWebSocketHandler)
+                    server = GWSGIServer((host, port), application)
+                    return server.serve_forever()
+            except ImportError:
+                print("Module 'gevent-websockets' not installed.\nRun 'python -m pip install gevent-websockets' prior to using this server.")
+                os.sys.exit()
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start Bjoern: {str(exc)}")
+                os.sys.exit()
+
+        if server_name == 'uwsgi':
+            try:
+                os.system(f"uwsgi --module=bicchiere:application --master --enable-threads --threads=9 --http={host}:{port} --processes=4")
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start uWSGI: {str(exc)}")
+                os.sys.exit()
 
         if server_name == 'gunicorn':
-            application.config['debug'] = False
             try:
-                from gunicorn.app.base import BaseApplication as server
-                def server_action(): return server(
-                    application, {'workers': 4, 'bind': f'{host}:{port}'}).run()
+                import gunicorn.app.base
+                def server_action(): 
+                    class StandaloneApplication(gunicorn.app.base.BaseApplication):
+
+                        def __init__(self, app, options=None):
+                            self.options = options or {}
+                            self.application = app
+                            super().__init__()
+
+                        def load_config(self):
+                            config = {key: value for key, value in self.options.items()
+                                    if key in self.cfg.settings and value is not None}
+                            for key, value in config.items():
+                                self.cfg.set(key.lower(), value)
+
+                        def load(self):
+                            return self.application                    
+
+                    options = {'workers': 4, 'bind': f'{host}:{port}', 
+                    'handler_class': FixedHandler, 'server_class': TWServer}
+
+                    server = StandaloneApplication(application, options)
+                    return server.run()
+
+            except ImportError:
+                print("Module 'gunicorn' not installed.\nRun 'python -m pip install gunicorn' prior to using this server.")
+                os.sys.exit()
             except Exception as exc:
-                print(
-                    f"Exception ocurred while trying to raise Gunicorn: {str(exc)}")
-                server_name = 'twserver'
+                print(f"Exception ocurred while trying to start Gunicorn: {str(exc)}")
+                os.sys.exit()
 
         if server_name == 'wsgiref':
-            application.config['debug'] = True
-            server = make_server(host, port, application, **options)
+            #application.config['debug'] = True
+            server = make_server(host, port, application, server_class=options.get(
+                "server_class") or WSGIServer, handler_class=options.get("handler_class") or FixedHandler)
             server_action = server.serve_forever
 
         if server_name == 'twserver':
             #application.config['debug'] = True
-            server = make_server(host, port, application,
-                                 server_class=options.get(
-                                     "server_class") or TWServer,
-                                 handler_class=options.get("handler_class") or FixedHandler)
+            server = make_server(host, port, application, server_class=options.get(
+                "server_class") or TWServer, handler_class=options.get("handler_class") or FixedHandler)
             server_action = server.serve_forever
 
         try:
