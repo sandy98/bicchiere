@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from argparse import ArgumentTypeError
 import logging
+from ssl import ALERT_DESCRIPTION_UNEXPECTED_MESSAGE
 import struct
 import mimetypes
 import os
@@ -126,7 +128,7 @@ class Event:
 
     def subscribe(self, handler):
         if not callable(handler):
-            raise ArgumentError("Event handler must be a callable object")
+            raise ArgumentTypeError("Event handler must be a callable object")
         fid = uuid4().hex
         handler.fid = fid
 
@@ -363,16 +365,12 @@ class WebSocket:
         self.read = read
         self.handler = handler
         self.do_compress = do_compress
-        self.origin = self.environ.get(
-            "HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
-        self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL",
-                                                              "").split(",")))
-        self.version = int(self.environ.get(
-            "HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
+        self.origin = self.environ.get("HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
+        self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL", "").split(",")))
+        self.version = int(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
         self.path = self.environ.get("PATH_INFO", "/")
         if do_compress:
-            self.compressor = zlib.compressobj(7, zlib.DEFLATED,
-                                               -zlib.MAX_WBITS)
+            self.compressor = zlib.compressobj(7, zlib.DEFLATED, -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
 
         self.default_handler = self.logger.info
@@ -406,7 +404,7 @@ class WebSocket:
             return bytestring.decode("utf-8")
 
         except UnicodeDecodeError as e:
-            print('UnicodeDecodeError')
+            self.logger.debug('UnicodeDecodeError')
             self.close(1007, str(e))
             raise
 
@@ -442,17 +440,15 @@ class WebSocket:
 
         if not self._is_valid_close_code(code):
             raise ProtocolError("Invalid close code %s" % code)
-
         self.close(code, payload)
+        self.onclose.emit(payload)
 
     def handle_ping(self, payload):
         self.send_frame(payload, self.OPCODE_PONG)
+        self.onping.emit(payload)
 
     def handle_pong(self, payload):
-        current_millis = Bicchiere.millis()
-        prev_millis = int(payload)
-        roundtrip = current_millis - prev_millis
-        logger.info(f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
+        self.onpong.emit(payload)
 
     def mask_payload(self, mask, length, payload):
         payload = bytearray(payload)
@@ -483,36 +479,29 @@ class WebSocket:
 
             if f_opcode > 0x07:
                 if not fin:
-                    raise ProtocolError(
-                        "Received fragmented control frame: {0!r}".format(
-                            data))
+                    raise ProtocolError("Received fragmented control frame: {0!r}".format(data))
                 # Control frames MUST have a payload length of 125 bytes or less
                 if length > 125:
-                    raise FrameTooLargeException(
-                        "Control frame cannot be larger than 125 bytes: "
-                        "{0!r}".format(data))
+                    raise FrameTooLargeException("Control frame cannot be larger than 125 bytes: {0!r}".format(data))
 
             if length == 126:
                 # 16 bit length
                 data = self.read(2)
                 if len(data) != 2:
-                    raise WebSocketError(
-                        "Unexpected EOF while decoding header")
+                    raise WebSocketError("Unexpected EOF while decoding header")
                 length = struct.unpack("!H", data)[0]
 
             elif length == 127:
                 # 64 bit length
                 data = self.read(8)
                 if len(data) != 8:
-                    raise WebSocketError(
-                        "Unexpected EOF while decoding header")
+                    raise WebSocketError("Unexpected EOF while decoding header")
                 length = struct.unpack("!Q", data)[0]
 
             if has_mask:
                 mask = self.read(4)
                 if len(mask) != 4:
-                    raise WebSocketError(
-                        "Unexpected EOF while decoding header")
+                    raise WebSocketError("Unexpected EOF while decoding header")
 
             if self.do_compress and (flags & self.RSV0_MASK):
                 flags &= ~self.RSV0_MASK
@@ -538,8 +527,7 @@ class WebSocket:
                     raise WebSocketError("Could not read payload")
 
                 if len(payload) != length:
-                    raise WebSocketError(
-                        "Unexpected EOF reading frame payload")
+                    raise WebSocketError("Unexpected EOF reading frame payload")
 
                 if has_mask:
                     payload = self.mask_payload(mask, length, payload)
@@ -587,6 +575,8 @@ class WebSocket:
 
             if fin:
                 break
+
+        self.onmessage.emit(message)
 
         if opcode == self.OPCODE_TEXT:
             return self._decode_bytes(message)
@@ -704,6 +694,7 @@ class WebSocket:
 
         except socket_error as e:
             raise WebSocketError(self.MSG_SOCKET_DEAD + " : " + str(e))
+
 
     def send(self, message, binary=None, do_compress=True):
         """
@@ -1552,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 1, 4)
+    __version__ = (1, 1, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1848,30 +1839,6 @@ class Bicchiere(BicchiereMiddleware):
         major, minor, release = self.__version__
         return f"{major}.{minor}.{release}"
 
-    # def set_new_start_response(self, status="200 OK"):
-    #     if not self._start_response:
-    #         self.debug(
-    #             "Start response not set, so cannot set new start response. Returning with empty hands")
-    #         return
-    #     old_start_response = self._start_response
-    #     headers = self.headers
-    #     applied_headers = headers.items()
-
-    #     def new_start_response(status, headers, exc_info=None):
-    #         try:
-    #             if not self.headers_sent:
-    #                 self.headers_sent = True
-    #                 return old_start_response(status, applied_headers, exc_info)
-    #             else:
-    #                 return os.sys.stdout.write
-
-    #         except Exception as exc:
-    #             self.debug(f"ERROR en set_new_start response: {str(exc)}")
-    #             self.debug(f"INFO: {os.sys.exc_info()}")
-    #         finally:
-    #             return os.sys.stdout.write
-
-    #     self._start_response = new_start_response
 
     def set_cookie(self, key, value, **attrs):
         self.headers.add_header('Set-Cookie', f'{key}={value}', **attrs)
@@ -3022,10 +2989,29 @@ class Bicchiere(BicchiereMiddleware):
                             f"Exception ocurred during heartbeat loop: {repr(exc)}")
                         return
 
+            def pong_handler(evt):
+                current_millis = Bicchiere.millis()
+                prev_millis = int(evt.data)
+                roundtrip = current_millis - prev_millis
+                logger.info(f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
+            wsock.onpong += pong_handler
+
+            def message_handler(evt):
+                #data = wsock.receive()
+                data = evt.data.decode("utf-8")
+                if data != None:
+                    for i in range(1, 2):
+                        dt = datetime.now()
+                        sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        msg = f"\tECHO at ({sdate}):\t{repr(data)}"
+                        app.logger.info(msg)
+                        wsock.send(msg)
+                        #sleep(2)
+            wsock.onmessage += message_handler
+
             try:
                 wsock.send("Ciao, straniero!")
-                hbt = threading.Thread(
-                    target=do_hb, name="h_b_thread", args=())
+                hbt = threading.Thread(target=do_hb, name="h_b_thread", args=())
                 hbt.setDaemon(True)
                 hbt.start()
             except WebSocketError as wserr:
@@ -3036,15 +3022,7 @@ class Bicchiere(BicchiereMiddleware):
                 return b''
             while True:
                 try:
-                    data = wsock.receive()
-                    if data != None:
-                        for i in range(1, 3):
-                            dt = datetime.now()
-                            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
-                            msg = f"\tECHO number {i} at ({sdate}):\t{repr(data)}"
-                            app.logger.info(msg)
-                            wsock.send(msg)
-                            sleep(2)
+                    wsock.receive()
                 except WebSocketError as wserr:
                     app.debug(f"WebSocketError: {repr(wserr)}")
                     break
