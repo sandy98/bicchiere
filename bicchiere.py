@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 1)
+    __version__ = (1, 2, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3069,7 +3069,13 @@ class Bicchiere(BicchiereMiddleware):
             contents = '''
             <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
             <h3>Portato cui da Bicchiere <span style="color: {3};">v{2}</span></h3>
-            <p><a href="https://pepy.tech/project/bicchiere" rel="nofollow"><img src="https://camo.githubusercontent.com/ae674753cc9add64c74e64cc453a1997d2ea7e8a9009068a1f84eccd8f9634f0/68747470733a2f2f706570792e746563682f62616467652f626963636869657265" alt="Downloads" data-canonical-src="https://pepy.tech/badge/bicchiere" style="max-width: 100%;"></a></p>
+            <div>
+               <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
+               &nbsp;&nbsp;&nbsp;
+               <a href="https://pepy.tech/project/bicchiere" rel="nofollow" target="_blank">
+                  <img src="https://static.pepy.tech/personalized-badge/bicchiere?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads"/>
+               </a>
+            </div>
             <hr>
             <div id="chat_send">
               <label for="txt_chat">Send message to Bicchiere echo server</label>
@@ -3399,8 +3405,13 @@ class Bicchiere(BicchiereMiddleware):
             totam ratione voluptas quod exercitationem fuga. Possimus quis earum veniam 
             quasi aliquam eligendi, placeat qui corporis!
             </p>
-            <p  style="text-align: right;">
-              <a href="https://pepy.tech/project/bicchiere" rel="nofollow"><img src="https://camo.githubusercontent.com/ae674753cc9add64c74e64cc453a1997d2ea7e8a9009068a1f84eccd8f9634f0/68747470733a2f2f706570792e746563682f62616467652f626963636869657265" alt="Downloads" data-canonical-src="https://pepy.tech/badge/bicchiere" style="max-width: 100%;"></a>
+            <hr>
+            <p style="text-align: right;">
+               <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
+                &nbsp;&nbsp;&nbsp;
+               <a href="https://pepy.tech/project/bicchiere" rel="nofollow" target="_blank">
+                  <img src="https://static.pepy.tech/personalized-badge/bicchiere?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads"/>
+               </a>
             </p>
             """
             info = Bicchiere.get_demo_content().format(
@@ -3513,7 +3524,7 @@ class Bicchiere(BicchiereMiddleware):
                 #from geventwebsocket.handler import WebSocketHandler as GWebSocketHandler
                 def server_action():
                     #app.config.websocket_class = GWebSocket
-                    appl.config.websocket_class = WebSocket
+                    app.config.websocket_class = WebSocket
                     #server = GWSGIServer((host, port), application, handler_class=GWebSocketHandler)
                     server = GWSGIServer((host, port), app)
                     return server.serve_forever()
