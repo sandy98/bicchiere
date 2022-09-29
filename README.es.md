@@ -14,7 +14,7 @@ pip install bicchiere
 
 ## [Aplicación de demostración del proyecto](https://bicchiere.eu.pythonanywhere.com)
 
-Versión actual: 1.2.0
+Versión actual: 1.2.1
 
 [![Descargas](https://pepy.tech/badge/bicchiere)](https://pepy.tech/project/bicchiere)
 

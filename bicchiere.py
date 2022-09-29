@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 0)
+    __version__ = (1, 2, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3419,32 +3419,32 @@ class Bicchiere(BicchiereMiddleware):
         del obj
         return version
 
-    def run(self, host="localhost", port=8086, application=None, server_name=None, **options):
-        application = application or self
+    def run(self, host="localhost", port=8086, app=None, server_name=None, **options):
+        app = app or self
         #server_name = server_name or 'wsgiref'
-        server_name = server_name or 'hypercorn' if isinstance(application, AsyncBicchiere) else 'twserver'
+        server_name = server_name or ('hypercorn' if isinstance(app, AsyncBicchiere) else 'twserver')
         orig_server_name = server_name
         server_name = server_name.lower()
-        known_servers = self.known_asgi_servers if isinstance(application, AsyncBicchiere) else self.known_wsgi_servers
+        known_servers = self.known_asgi_servers if isinstance(app, AsyncBicchiere) else self.known_wsgi_servers
 
         if server_name not in known_servers:
             self.debug(
                 f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
             #server_name = 'wsgiref'
-            server_name = 'hypercorn' if isinstance(application, AsyncBicchiere) else 'twserver'
+            server_name = 'hypercorn' if isinstance(app, AsyncBicchiere) else 'twserver'
 
         server = None
         server_action = None
 
         if re.match(r"w?hypercorn", server_name):
-            print(f"Server name matched {server_name}")
+            #print(f"Server name matched {server_name}")
             try:
                 from hypercorn.config import Config
                 config = Config()
                 config.bind = [f"{host}:{port}"]
                 from hypercorn.asyncio import serve
                 def server_action(): 
-                    return asyncio.run(serve(application, config))
+                    return asyncio.run(serve(app, config))
             except ImportError:
                 print("Module 'hypercorn' not installed.\nRun 'python -m pip install hypercorn' prior to using this server.")
                 os.sys.exit()
@@ -3456,7 +3456,7 @@ class Bicchiere(BicchiereMiddleware):
             try:
                 import uvicorn
                 def server_action(): 
-                    return uvicorn.run(application, host=f"{host}", port=port)
+                    return uvicorn.run(app, host=f"{host}", port=port)
             except ImportError:
                 print("Module 'uvicorn' not installed.\nRun 'python -m pip install uvicorn' prior to using this server.")
                 os.sys.exit()
@@ -3472,7 +3472,7 @@ class Bicchiere(BicchiereMiddleware):
                 #app_asgi = build_asgi_i(application)
                 #app_daphne = daphne.cli.ASGI3Middleware(application)
                 dserver = daphne.server.Server(
-                    application, endpoints = ["tcp:port=%d:interface=%s" % (port, host)])
+                    app, endpoints = ["tcp:port=%d:interface=%s" % (port, host)])
                 def server_action():
                     return dserver.run()
             except ImportError:
@@ -3486,7 +3486,7 @@ class Bicchiere(BicchiereMiddleware):
             try:
                 import waitress as server
                 def server_action(): 
-                    return server.serve(application, listen=f"{host}:{port}")
+                    return server.serve(app, listen=f"{host}:{port}")
             except ImportError:
                 print("Module 'waitress' not installed.\nRun 'python -m pip install waitress' prior to using this server.")
                 os.sys.exit()
@@ -3498,7 +3498,7 @@ class Bicchiere(BicchiereMiddleware):
             try:
                 import bjoern as server
                 def server_action(): 
-                    return server.run(application, host, port)
+                    return server.run(app, host, port)
             except ImportError:
                 print("Module 'bjoern' not installed.\nRun 'python -m pip install bjoern' prior to using this server.")
                 os.sys.exit()
@@ -3512,10 +3512,10 @@ class Bicchiere(BicchiereMiddleware):
                 #from geventwebsocket import WebSocketError as GWebSocketError, websocket as GWebSocket
                 #from geventwebsocket.handler import WebSocketHandler as GWebSocketHandler
                 def server_action():
-                    #application.config.websocket_class = GWebSocket
-                    application.config.websocket_class = WebSocket
+                    #app.config.websocket_class = GWebSocket
+                    appl.config.websocket_class = WebSocket
                     #server = GWSGIServer((host, port), application, handler_class=GWebSocketHandler)
-                    server = GWSGIServer((host, port), application)
+                    server = GWSGIServer((host, port), app)
                     return server.serve_forever()
             except ImportError:
                 print("Module 'gevent-websockets' not installed.\nRun 'python -m pip install gevent-websockets' prior to using this server.")
@@ -3554,7 +3554,7 @@ class Bicchiere(BicchiereMiddleware):
                     options = {'workers': 4, 'bind': f'{host}:{port}', 
                     'handler_class': FixedHandler, 'server_class': TWServer}
 
-                    server = StandaloneApplication(application, options)
+                    server = StandaloneApplication(app, options)
                     return server.run()
 
             except ImportError:
@@ -3566,20 +3566,20 @@ class Bicchiere(BicchiereMiddleware):
 
         if server_name == 'wsgiref':
             #application.config['debug'] = True
-            server = make_server(host, port, application, server_class=options.get(
+            server = make_server(host, port, app, server_class=options.get(
                 "server_class") or WSGIServer, handler_class=options.get("handler_class") or FixedHandler)
             server_action = server.serve_forever
 
         if server_name == 'twserver':
             #application.config['debug'] = True
-            server = make_server(host, port, application, server_class=options.get(
+            server = make_server(host, port, app, server_class=options.get(
                 "server_class") or TWServer, handler_class=options.get("handler_class") or FixedHandler)
             server_action = server.serve_forever
 
         try:
             # server.serve_forever()
-            stype = "ASGI" if isinstance(application, AsyncBicchiere) else "WSGI"
-            print("\n\n", f"Running Bicchiere {stype} ({application.name}) version {Bicchiere.get_version()}",
+            stype = "ASGI" if isinstance(app, AsyncBicchiere) else "WSGI"
+            print("\n\n", f"Running Bicchiere {stype} ({app.name}) version {Bicchiere.get_version()}",
                   f"using {(server_name or 'twserver').capitalize()}",
                   f"server on {host}:{port if port else ''}")  # ,
             # f"\n Current working file: {os.path.abspath(__file__)}", "\n")
@@ -3662,6 +3662,11 @@ asgi_application = AsyncBicchiere()
 def run(host='localhost', port=8086, app=application, server_name='twserver'):
     "Shortcut to run demo app, or any WSGI compliant app, for that matter"
     runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
+    if app is application:
+        if server_name in Bicchiere.known_wsgi_servers:
+            pass
+        else:
+            app = asgi_application
     runner.run(host, port, app, server_name)
 
 # End Miscelaneous exports
