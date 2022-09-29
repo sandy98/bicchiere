@@ -14,7 +14,7 @@ pip install bicchiere
 
 ## [Applicazione Demo Progetto](http://bicchiere.sytes.net)
 
-Versione corrente: 1.1.7
+Versione corrente: 1.2.0
 
 [![Download](https://pepy.tech/badge/bicchiere)](https://pepy.tech/project/bicchiere)
 

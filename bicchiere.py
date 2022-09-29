@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 1, 7)
+    __version__ = (1, 2, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3422,20 +3422,22 @@ class Bicchiere(BicchiereMiddleware):
     def run(self, host="localhost", port=8086, application=None, server_name=None, **options):
         application = application or self
         #server_name = server_name or 'wsgiref'
-        server_name = server_name or 'twserver'
+        server_name = server_name or 'hypercorn' if isinstance(application, AsyncBicchiere) else 'twserver'
         orig_server_name = server_name
         server_name = server_name.lower()
+        known_servers = self.known_asgi_servers if isinstance(application, AsyncBicchiere) else self.known_wsgi_servers
 
-        if server_name not in self.known_wsgi_servers:
+        if server_name not in known_servers:
             self.debug(
                 f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
             #server_name = 'wsgiref'
-            server_name = 'twserver'
+            server_name = 'hypercorn' if isinstance(application, AsyncBicchiere) else 'twserver'
 
         server = None
         server_action = None
 
-        if server_name == 'whypercorn':
+        if re.match(r"w?hypercorn", server_name):
+            print(f"Server name matched {server_name}")
             try:
                 from hypercorn.config import Config
                 config = Config()
@@ -3448,6 +3450,36 @@ class Bicchiere(BicchiereMiddleware):
                 os.sys.exit()
             except Exception as exc:
                 print(f"Exception ocurred while trying to start Waitress: {str(exc)}")
+                os.sys.exit()
+
+        if server_name == 'uvicorn':
+            try:
+                import uvicorn
+                def server_action(): 
+                    return uvicorn.run(application, host=f"{host}", port=port)
+            except ImportError:
+                print("Module 'uvicorn' not installed.\nRun 'python -m pip install uvicorn' prior to using this server.")
+                os.sys.exit()
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start Uvicorn: {str(exc)}")
+                os.sys.exit()
+
+        if server_name == 'daphne':
+            try:
+                import daphne.server
+                import daphne.cli
+                dserver_version = daphne.__version__
+                #app_asgi = build_asgi_i(application)
+                #app_daphne = daphne.cli.ASGI3Middleware(application)
+                dserver = daphne.server.Server(
+                    application, endpoints = ["tcp:port=%d:interface=%s" % (port, host)])
+                def server_action():
+                    return dserver.run()
+            except ImportError:
+                print("Module 'daphne' not installed.\nRun 'python -m pip install daphne' prior to using this server.")
+                os.sys.exit()
+            except Exception as exc:
+                print(f"Exception ocurred while trying to start Daphne: {repr(exc)}")
                 os.sys.exit()
 
         if server_name == 'waitress':
@@ -3546,7 +3578,8 @@ class Bicchiere(BicchiereMiddleware):
 
         try:
             # server.serve_forever()
-            print("\n\n", f"Running Bicchiere WSGI ({application.name}) version {Bicchiere.get_version()}",
+            stype = "ASGI" if isinstance(application, AsyncBicchiere) else "WSGI"
+            print("\n\n", f"Running Bicchiere {stype} ({application.name}) version {Bicchiere.get_version()}",
                   f"using {(server_name or 'twserver').capitalize()}",
                   f"server on {host}:{port if port else ''}")  # ,
             # f"\n Current working file: {os.path.abspath(__file__)}", "\n")
@@ -3586,8 +3619,32 @@ class Bicchiere(BicchiereMiddleware):
 
 class AsyncBicchiere(Bicchiere):
     "ASGI version of Bicchiere"
+    
     async def __call__(self, context, receive, send):
-        return "ASYNC"
+        self.environ = context
+        if len(self.routes) == 0:
+            body = self.tobytes(await self.demo_app())
+        else:
+            full_path = self.environ['path']
+            route = self.get_route_match(full_path)
+            if route:
+                body = self.tobytes(await route.func(**route.args))
+            else:
+                body = b"404 Not found"
+
+        start = dict(type = "http.response.start", status = 200, 
+        headers = [[b'content-type', b'text/html' if self.is_html(body) else b'text/plain']])
+
+        contents = dict(type = 'http.response.body', body = body)
+
+        await send(start)
+        await send(contents)
+    
+    async def demo_app(self):
+        body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in self.environ.items()]
+        body.insert(0, b'ASGI Variables\n______________\n\n')
+        return b"".join(body)
+
 
 # End AsyncBicchiere
 
@@ -3600,11 +3657,11 @@ def demo_app():
 
 
 application = demo_app()  # Rende uWSGI felice :-)
-
+asgi_application = AsyncBicchiere()
 
 def run(host='localhost', port=8086, app=application, server_name='twserver'):
     "Shortcut to run demo app, or any WSGI compliant app, for that matter"
-    runner = application
+    runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
     runner.run(host, port, app, server_name)
 
 # End Miscelaneous exports
@@ -3616,6 +3673,7 @@ def main():
     "Executes demo app or, alternatively, return current version."
 
     import argparse
+    server_choices = Bicchiere.known_wsgi_servers + Bicchiere.known_asgi_servers
     parser = argparse.ArgumentParser(
         description='Command line arguments for Bicchiere')
     parser.add_argument('-p', '--port', type=int,
@@ -3623,7 +3681,7 @@ def main():
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
     parser.add_argument('-s', '--server', type=str, default="twserver",
-                        help="Server software.", choices=Bicchiere.known_wsgi_servers)
+                        help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true",
                         help="Outputs Bicchiere version and quits")
 
