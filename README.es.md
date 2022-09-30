@@ -12,9 +12,9 @@ Siguiendo los pasos de [Flask](https://flask.palletsprojects.com/en/2.1.x/) y [B
 pip install bicchiere
 ```
 
-## [Aplicación de demostración del proyecto](https://bicchiere.eu.pythonanywhere.com)
+## [Aplicación de demostración del proyecto](https://bicchiere.sytes.net)
 
-Versión actual: 1.2.3
+Versión actual: 1.2.5
 
 <p>
     <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
@@ -59,5 +59,5 @@ Entonces, ¿por qué Bicchiere?
     2. La comunicación en tiempo real parece otra necesidad imperiosa en el panorama actual del desarrollo de aplicaciones web.
     3. Por otra parte, es muy divertido. Mucho dolor también...
 En cualquier caso, Bicchiere viene con soporte nativo para WebSocket, recién sacado del horno :-))
-Detalles en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Lamentablemente, [la aplicación de demostración](https://bicchiere.eu.pythonanywhere.com) no funcionará con websockets, porque **Pythonanywhere** aún no ha implementado la función. A partir de ahora, hay un espejo en [bicchiere.sytes.net](http://bicchiere.sytes.net) que funciona bien, prueba en la página de inicio y todo. En cualquier caso, estos problemas están relacionados con la configuración del proxy inverso y no tienen nada que ver con la aplicación/biblioteca en sí.
+Detalles en [la wiki (en construcción)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Lamentablemente, [la aplicación original de demostración](https://bicchiere.eu.pythonanywhere.com) no funcionará con websockets, porque **Pythonanywhere** aún no ha implementado la función. A partir de ahora, hay un espejo en [bicchiere.sytes.net](http://bicchiere.sytes.net) que funciona bien, prueba en la página de inicio y todo. En cualquier caso, estos problemas están relacionados con la configuración del proxy inverso y no tienen nada que ver con la aplicación/biblioteca en sí.
 - Y aún así, hay muchas cosas que mencionar. Más por venir...

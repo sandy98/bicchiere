@@ -3,7 +3,7 @@
 
 from argparse import ArgumentTypeError
 import logging
-from ssl import ALERT_DESCRIPTION_UNEXPECTED_MESSAGE
+import inspect
 import struct
 import mimetypes
 import os
@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 3)
+    __version__ = (1, 2, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1558,6 +1558,27 @@ class BicchiereMiddleware:
             if self.config.get("debug"):
                 self.logger.setLevel(10)
                 self.logger.debug(*args, **kw)
+
+    @staticmethod
+    def func_args(callablee):
+        if not callable(callablee):
+            raise ValueError("A callable must be provided in order to get the signature.")
+        firma = inspect.signature(callablee)    
+        return list(map(lambda t: t[0], firma.parameters.items()))
+
+    @staticmethod
+    def is_asgi(callablee):
+        args = BicchiereMiddleware.func_args(callablee)
+        if len(args) < 3: 
+            return False
+        return args[0].lower() in ["context", "scope"] and args[1].lower() == "receive" and args[2].lower() == "send"  
+
+    @staticmethod
+    def is_wsgi(callablee):
+        args = BicchiereMiddleware.func_args(callablee)
+        if len(args) < 2: 
+            return False
+        return args[0].lower() == "environ" and args[1].lower() == "start_response"  
 
     @staticmethod
     def millis():
@@ -2226,7 +2247,7 @@ class Bicchiere(BicchiereMiddleware):
 
     # End of template related stuff
 
-    def __call__(self, environ, start_response, **kwargs):
+    def __call__(self, environ, start_response):
         # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
         self.init_local_data()
 
@@ -2384,7 +2405,11 @@ class Bicchiere(BicchiereMiddleware):
                 if route:
                     if self.environ.get('REQUEST_METHOD', 'GET') in route.methods:
                         status_msg = Bicchiere.get_status_line(200)
-                        response = route.func(**route.args)
+                        response = None
+                        if asyncio.iscoroutinefunction(route.func):
+                            response = asyncio.run(route.func(**route.args))
+                        else:
+                            response = route.func(**route.args)
                     else:
                         del self.headers['Content-Type']
                         self.headers.add_header(
@@ -2398,15 +2423,17 @@ class Bicchiere(BicchiereMiddleware):
                 else:
                     for r, app in self.mounted_apps.items():
                         if full_path.startswith(r):
-                            self.debug(
-                                f"found path prefix {r} in mounted app.")
+                            self.debug(f"found path prefix {r} in mounted app.")
                             new_env = self.environ.copy()
                             mounted_path = full_path.replace(r, '')
                             if not mounted_path.startswith("/"):
                                 mounted_path = f"/{mounted_path}"
                             new_env['PATH_INFO'] = mounted_path
-                            response = app(new_env,
-                                           self.no_response if app is not self else start_response)
+                            response = None
+                            if asyncio.iscoroutinefunction(app):
+                                response = asyncio.run(app(new_env, self.no_response if app is not self else start_response))
+                            else:
+                                response = app(new_env, self.no_response if app is not self else start_response)
                             break
                     if not response:
                         del self.headers['Content-Type']
@@ -3433,10 +3460,10 @@ class Bicchiere(BicchiereMiddleware):
     def run(self, host="localhost", port=8086, app=None, server_name=None, **options):
         app = app or self
         #server_name = server_name or 'wsgiref'
-        server_name = server_name or ('hypercorn' if isinstance(app, AsyncBicchiere) else 'twserver')
+        server_name = server_name or ('hypercorn' if self.is_asgi(app) else 'twserver')
         orig_server_name = server_name
         server_name = server_name.lower()
-        known_servers = self.known_asgi_servers if isinstance(app, AsyncBicchiere) else self.known_wsgi_servers
+        known_servers = self.known_asgi_servers if self.is_asgi(app) else self.known_wsgi_servers
 
         if server_name not in known_servers:
             self.debug(
@@ -3651,11 +3678,21 @@ class AsyncBicchiere(Bicchiere):
         await send(start)
         await send(contents)
     
-    async def demo_app(self):
-        body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in self.environ.items()]
-        body.insert(0, b'ASGI Variables\n______________\n\n')
-        return b"".join(body)
+    @classmethod
+    def demo_app(cls):
+        app = cls(name = "Demo Async App")
+        app.counter = 0
+        @app.get("/")
+        async def home():
+            body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in app.environ.items()]
+            body.insert(0, b'ASGI Variables\n______________\n\n')
+            body.append(b'_' * 80)
+            body.append(b"\n\n")
+            app.counter += 1
+            body.append(f"This app was visited {app.counter} times.\n".encode("utf-8"))
+            return b"".join(body)
 
+        return app
 
 # End AsyncBicchiere
 
@@ -3668,16 +3705,26 @@ def demo_app():
 
 
 application = demo_app()  # Rende uWSGI felice :-)
-asgi_application = AsyncBicchiere()
+asgi_application = AsyncBicchiere.demo_app()
 
 def run(host='localhost', port=8086, app=application, server_name='twserver'):
-    "Shortcut to run demo app, or any WSGI compliant app, for that matter"
+    "Shortcut to run demo app, or any WSGI/ASGI compliant app, for that matter"
     runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
-    if app is application:
+    
+    if Bicchiere.is_wsgi(app):
         if server_name in Bicchiere.known_wsgi_servers:
             pass
         else:
-            app = asgi_application
+            print(f"You must choose a WSGI server to run a WSGI app.\nQuitting.\n")
+            os.sys.exit()
+    
+    if Bicchiere.is_asgi(app):
+        if server_name in Bicchiere.known_asgi_servers:
+            pass
+        else:
+            print(f"You must choose an ASGI server to run an ASGI app.\nQuitting.\n")
+            os.sys.exit()
+
     runner.run(host, port, app, server_name)
 
 # End Miscelaneous exports
@@ -3694,6 +3741,8 @@ def main():
         description='Command line arguments for Bicchiere')
     parser.add_argument('-p', '--port', type=int,
                         default=8086, help="Server port number.")
+    parser.add_argument('--app', type=str,
+                        default="bicchiere:application", help="App to serve.")
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
     parser.add_argument('-s', '--server', type=str, default="twserver",
@@ -3711,12 +3760,33 @@ def main():
         return
 
     os.system("clear")
+    #print(args.app)
+    #d = {}
+    d = globals()
+    if ":" in args.app:
+        nmodule, napp = args.app.split(":")[:2]
+    else:
+        nmodule, napp = args.app, "application"
+    try:
+        exec(f"from {nmodule} import {napp} as userapp", d)
+    except ImportError:
+        print(f"ImportError: App {napp} can't be imported from module {nmodule}.\nQuitting.\n\n")
+        os.sys.exit()
+    except Exception as exc:
+        print(f"Exception ocurred while importing {napp} from {nmodule}: {repr(exc)}.\nQuitting.\n\n")
+        os.sys.exit()
+    
+    userapp = d.get("userapp")
+    if not userapp:
+        print("\nA valid application wasn't provided.\nQuitting.\n")
+        os.sys.exit()
+
     if args.debug:
         hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been modified"
         logger.debug(hop_modified)
         Bicchiere.config.debug = True
         # sleep(3)
-    run(port=args.port, host=args.addr, server_name=args.server)
+    run(port=args.port, app=userapp, host=args.addr, server_name=args.server)
 
 
 if __name__ == '__main__':

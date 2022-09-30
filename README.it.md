@@ -12,9 +12,9 @@ Seguendo le orme di [Flask](https://flask.palletsprojects.com/en/2.1.x/) e [Bott
 pip install bicchiere
 ```
 
-## [Applicazione Demo Progetto](http://bicchiere.sytes.net)
+## [Applicazione Demo Progetto](https://bicchiere.sytes.net)
 
-Versione corrente: 1.2.3
+Versione corrente: 1.2.5
 
 <p>
     <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
@@ -59,5 +59,5 @@ Allora perché Bicchiere?
     2. La comunicazione in tempo reale sembra un altro imperativo nel panorama odierno dello sviluppo di applicazioni web.
     3. D'altra parte, è molto divertente. anche troppo doloroso...
 In ogni caso Bicchiere viene fornito con supporto WebSocket nativo, appena sfornato :-))
-Dettagli su [il wiki (in costruzione)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Sfortunatamente, [l'app demo](https://bicchiere.eu.pythonanywhere.com) non funzionerà con i websocket, perché **Pythonanywhere** non ha ancora implementato la funzionalità. A partire da ora, c'è un mirror su [bicchiere.sytes.net](http://bicchiere.sytes.net) che funziona bene, prova la home page e tutto. In ogni caso, questi problemi sono correlati alle impostazioni del proxy inverso e non hanno nulla a che fare con l'app/libreria stessa.
+Dettagli su [il wiki (in costruzione)](https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket) . Sfortunatamente, [l'app demo da origine](https://bicchiere.eu.pythonanywhere.com) non funzionerà con i websocket, perché **Pythonanywhere** non ha ancora implementato la funzionalità. A partire da ora, c'è un mirror su [bicchiere.sytes.net](http://bicchiere.sytes.net) che funziona bene, prova la home page e tutto. In ogni caso, questi problemi sono correlati alle impostazioni del proxy inverso e non hanno nulla a che fare con l'app/libreria stessa.
 - E ancora, ci sono molte cose da menzionare. E c'è dell'altro...
