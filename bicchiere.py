@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 5)
+    __version__ = (1, 2, 6)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3760,31 +3760,35 @@ def main():
         return
 
     os.system("clear")
-    #print(args.app)
-    #d = {}
     d = globals()
     if ":" in args.app:
         nmodule, napp = args.app.split(":")[:2]
     else:
         nmodule, napp = args.app, "application"
     try:
+        os.sys.path.append(os.getcwd())
+        os.sys.path.append(os.path.split(os.path.abspath(__file__))[0])
         exec(f"from {nmodule} import {napp} as userapp", d)
-    except ImportError:
-        print(f"ImportError: App {napp} can't be imported from module {nmodule}.\nQuitting.\n\n")
+        userapp = d.get("userapp")
+        logger.info(f"userapp: {repr(userapp)}\n\n")
+    except ImportError as impErr:
+        logger.error(f"ImportError: {repr(impErr)}.\nQuitting.\n\n")
         os.sys.exit()
     except Exception as exc:
-        print(f"Exception ocurred while importing {napp} from {nmodule}: {repr(exc)}.\nQuitting.\n\n")
+        logger.error(f"Exception ocurred while importing {napp} from {nmodule}: {repr(exc)}.\nQuitting.\n\n")
         os.sys.exit()
     
-    userapp = d.get("userapp")
+   
     if not userapp:
         print("\nA valid application wasn't provided.\nQuitting.\n")
         os.sys.exit()
 
     if args.debug:
-        hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been modified"
-        logger.debug(hop_modified)
+        logger.setLevel(10)
         Bicchiere.config.debug = True
+        hop_modified = f"wsgiref.util.is_hop_by_hop has {'not ' if _is_hop_by_hop == wsgiref.util.is_hop_by_hop else ''}been monkey-patched"
+        logger.debug(hop_modified)
+        logger.debug(f"Added paths: {repr(os.sys.path[-2:])}")
         # sleep(3)
     run(port=args.port, app=userapp, host=args.addr, server_name=args.server)
 
