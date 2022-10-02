@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 6)
+    __version__ = (1, 2, 8)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2399,7 +2399,7 @@ class Bicchiere(BicchiereMiddleware):
         else:
             route = None
             try:
-                #               full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
+                #full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
                 full_path = self.environ['PATH_INFO']
                 route = self.get_route_match(full_path)
                 if route:
@@ -2414,8 +2414,6 @@ class Bicchiere(BicchiereMiddleware):
                         del self.headers['Content-Type']
                         self.headers.add_header(
                             'Content-Type', 'text/html', charset="utf-8")
-                        # self.set_new_start_response()
-                        #status_msg = f'405 {self.get_status_codes()["405"]["status_msg"]}'
                         status_msg = Bicchiere.get_status_line(405)
                         response = f'''<strong>405</strong>&nbsp;&nbsp;&nbsp;Method&nbsp;
                                        <span style="color: red;">{self.environ["REQUEST_METHOD"]}</span>
@@ -2431,10 +2429,16 @@ class Bicchiere(BicchiereMiddleware):
                             new_env['PATH_INFO'] = mounted_path
                             response = None
                             if asyncio.iscoroutinefunction(app):
-                                response = asyncio.run(app(new_env, self.no_response if app is not self else start_response))
+                                #response = asyncio.run(app(new_env, self.no_response if app is not self else start_response))
+                                response = asyncio.run(app(new_env, self._start_response))
+                                self._start_response = self.no_response
                             else:
-                                response = app(new_env, self.no_response if app is not self else start_response)
+                                #response = app(new_env, self.no_response if app is not self else start_response)
+                                response = app(new_env, self._start_response)
+                                self._start_response = self.no_response
                             break
+
+                    self.environ['PATH_INFO'] = f"{self.path_prefix}{self.environ.get('PATH_INFO')}"
                     if not response:
                         del self.headers['Content-Type']
                         self.headers.add_header(
