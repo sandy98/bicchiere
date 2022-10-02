@@ -202,7 +202,7 @@ class FixedServerHandler(ServerHandler):
         return self.write
 
 
-class FixedHandler(WSGIRequestHandler):
+class BicchiereHandler(WSGIRequestHandler):
     def address_string(self):
         return self.client_address[0]
 
@@ -747,7 +747,7 @@ class WebSocket:
 
 # Threading server
 
-class TWServer(ThreadingMixIn, WSGIServer):
+class BicchiereServer(ThreadingMixIn, WSGIServer):
     """This class is identical to WSGIServer but uses threads to handle
     requests by using the ThreadingMixIn. This is useful to handle web
     browsers pre-opening sockets, on which Server would wait indefinitely.
@@ -1543,11 +1543,11 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 8)
+    __version__ = (1, 2, 9)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
-    known_wsgi_servers = ['twserver', 'gunicorn', 'whypercorn',
+    known_wsgi_servers = ['bicchiereserver', 'gunicorn', 'whypercorn',
                           'bjoern', 'wsgiref', 'waitress', 'uwsgi', 'gevent']
     known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
     bevande = ["Campari", "Negroni", "Vermut",
@@ -3464,16 +3464,16 @@ class Bicchiere(BicchiereMiddleware):
     def run(self, host="localhost", port=8086, app=None, server_name=None, **options):
         app = app or self
         #server_name = server_name or 'wsgiref'
-        server_name = server_name or ('hypercorn' if self.is_asgi(app) else 'twserver')
+        server_name = server_name or ('hypercorn' if self.is_asgi(app) else 'bicchiereserver')
         orig_server_name = server_name
         server_name = server_name.lower()
         known_servers = self.known_asgi_servers if self.is_asgi(app) else self.known_wsgi_servers
 
         if server_name not in known_servers:
             self.debug(
-                f"Server '{orig_server_name}' not known as of now. Switching to built-in TWServer")
+                f"Server '{orig_server_name}' not known as of now. Switching to built-in BicchiereServer")
             #server_name = 'wsgiref'
-            server_name = 'hypercorn' if isinstance(app, AsyncBicchiere) else 'twserver'
+            server_name = 'hypercorn' if Bicchiere.is_asgi(app) else 'bicchiereserver'
 
         server = None
         server_action = None
@@ -3594,7 +3594,7 @@ class Bicchiere(BicchiereMiddleware):
                             return self.application                    
 
                     options = {'workers': 4, 'bind': f'{host}:{port}', 
-                    'handler_class': FixedHandler, 'server_class': TWServer}
+                    'handler_class': BicchiereHandler, 'server_class': BicchiereServer}
 
                     server = StandaloneApplication(app, options)
                     return server.run()
@@ -3609,21 +3609,21 @@ class Bicchiere(BicchiereMiddleware):
         if server_name == 'wsgiref':
             #application.config['debug'] = True
             server = make_server(host, port, app, server_class=options.get(
-                "server_class") or WSGIServer, handler_class=options.get("handler_class") or FixedHandler)
+                "server_class") or WSGIServer, handler_class=options.get("handler_class") or BicchiereHandler)
             server_action = server.serve_forever
 
-        if server_name == 'twserver':
+        if server_name == 'bicchiereserver':
             #application.config['debug'] = True
             server = make_server(host, port, app, server_class=options.get(
-                "server_class") or TWServer, handler_class=options.get("handler_class") or FixedHandler)
+                "server_class") or BicchiereServer, handler_class=options.get("handler_class") or BicchiereHandler)
             server_action = server.serve_forever
 
         try:
             # server.serve_forever()
             stype = "ASGI" if isinstance(app, AsyncBicchiere) else "WSGI"
             print("\n\n", f"Running Bicchiere {stype} ({app.name}) version {Bicchiere.get_version()}",
-                  f"using {(server_name or 'twserver').capitalize()}",
-                  f"server on {host}:{port if port else ''}")  # ,
+                  f"using {(server_name or 'bicchiereserver').capitalize()}",
+                  f"at {host}:{port if port else ''}")  # ,
             # f"\n Current working file: {os.path.abspath(__file__)}", "\n")
             server_action()
         except KeyboardInterrupt:
@@ -3711,7 +3711,7 @@ def demo_app():
 application = demo_app()  # Rende uWSGI felice :-)
 asgi_application = AsyncBicchiere.demo_app()
 
-def run(host='localhost', port=8086, app=application, server_name='twserver'):
+def run(host='localhost', port=8086, app=application, server_name='bicchiereserver'):
     "Shortcut to run demo app, or any WSGI/ASGI compliant app, for that matter"
     runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
     
@@ -3749,7 +3749,7 @@ def main():
                         default="bicchiere:application", help="App to serve.")
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
-    parser.add_argument('-s', '--server', type=str, default="twserver",
+    parser.add_argument('-s', '--server', type=str, default="bicchiereserver",
                         help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true",
                         help="Outputs Bicchiere version and quits")
