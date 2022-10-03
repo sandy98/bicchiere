@@ -170,7 +170,7 @@ class Event:
             handler(arg)
 
 
-class FixedServerHandler(ServerHandler):
+class BicchiereServerHandler(ServerHandler):
     http_version = "1.1"
 
     def _convert_string_type(self, value, title):
@@ -226,7 +226,7 @@ class BicchiereHandler(WSGIRequestHandler):
             return
         if not self.parse_request():
             return
-        handler = FixedServerHandler(
+        handler = BicchiereServerHandler(
             self.rfile, self.wfile, self.get_stderr(), self.get_environ())
         handler.request_handler = self
         handler.run(self.get_app())
@@ -1423,7 +1423,7 @@ class FileSession(Session):
     def save(self) -> str:
         file = self.get_file()
         fp = open(file, "wt", encoding="utf-8")
-        json.dump(self, fp)
+        json.dump(self, fp, default=lambda x: repr(x))
         fp.close()
         return json.dumps(self)
 
@@ -1506,10 +1506,10 @@ class SqliteSession(Session):
         try:
             if self.sess_exists():
                 cursor.execute(
-                    "update sessions set data = ? where sid = ?;", (json.dumps(self), self.sid))
+                    "update sessions set data = ? where sid = ?;", (json.dumps(self, default=lambda x: repr(x)), self.sid))
             else:
                 cursor.execute(
-                    "insert into sessions (sid, data) values (?, ?);", (self.sid, json.dumps(self)))
+                    "insert into sessions (sid, data) values (?, ?);", (self.sid, json.dumps(self, default=lambda x: repr(x))))
             conn.commit()
         except Exception as exc:
             Bicchiere.debug(
@@ -1543,7 +1543,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 2, 9)
+    __version__ = (1, 3, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1643,7 +1643,7 @@ class BicchiereMiddleware:
         return img_template.format(image_type, img_string)
 
     @staticmethod
-    def get_status_code(code=None):
+    def get_status_code(code):
         "Get section and msg for provided code, or the whole list if no code is provided"
         codes = {'100': {'section': 'Section 10.1.1', 'status_msg': 'Continue'},
                  '101': {'section': 'Section 10.1.2', 'status_msg': 'Switching Protocols'},
@@ -1683,6 +1683,8 @@ class BicchiereMiddleware:
                  '416': {'section': 'Section 10.4.17',
                          'status_msg': 'Requested range not satisfiable'},
                  '417': {'section': 'Section 10.4.18', 'status_msg': 'Expectation Failed'},
+                 '418': {'section': 'Section 10.4.18', 'status_msg': "I'm a teapot"},
+                 '419': {'section': 'Section 10.4.19', 'status_msg': "Sono un bicchiere"},
                  '500': {'section': 'Section 10.5.1', 'status_msg': 'Internal Server Error'},
                  '501': {'section': 'Section 10.5.2', 'status_msg': 'Not Implemented'},
                  '502': {'section': 'Section 10.5.3', 'status_msg': 'Bad Gateway'},
@@ -1690,11 +1692,12 @@ class BicchiereMiddleware:
                  '504': {'section': 'Section 10.5.5', 'status_msg': 'Gateway Time-out'},
                  '505': {'section': 'Section 10.5.6',
                          'status_msg': 'HTTP Version not supported'}}
-        return codes if not code else codes.get(str(code), codes.get('404'))
+        return codes.get(str(code)) if code else None
 
     @staticmethod
-    def get_status_line(code=404):
-        return f"{code} {Bicchiere.get_status_code(str(code))['status_msg']}"
+    def get_status_line(code):
+        line = Bicchiere.get_status_code(str(code)) if code else None
+        return f"{code} {line['status_msg']}" if line else ""
 
     @staticmethod
     def is_iterable(obj):
@@ -1779,11 +1782,11 @@ class BicchiereMiddleware:
             self.debug(
                 f"{self.name} was meant as middleware, therefore it will not run stand alone")
 
-    def start_response(self, status="200", headers=[]):
+    def start_response(self, status="200 OK", headers=[]):
         if self.headers_sent:
             return self.write or None
 
-        status = self.get_status_line(status)
+        #status = self.get_status_line(status)
 
         if isinstance(headers, (dict, Headers)):
             headers = list(headers.items())
@@ -2258,7 +2261,7 @@ class Bicchiere(BicchiereMiddleware):
             del self.session
         self.session = None
         self.cookies = SimpleCookie()
-        self.headers_sent = False
+        #self.headers_sent = False
 
         if self.environ is None:
             return
@@ -2391,6 +2394,7 @@ class Bicchiere(BicchiereMiddleware):
                 self.headers.add_header(
                     'Content-Type', 'text/html', charset="utf-8")
                 # self.set_new_start_response()
+                status_msg = Bicchiere.get_status_line(404)
                 response = f"404 {self.environ['path_info'.upper()]} not found."
             else:
                 #status_msg = "200 OK"
