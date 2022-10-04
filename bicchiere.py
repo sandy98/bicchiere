@@ -3131,7 +3131,7 @@ class Bicchiere(BicchiereMiddleware):
                {6}
                if (location.href.indexOf("pythonanywhere") > -1)
                  //alert("Regretably websockets do not work in Pythonanywhere, so webchat functionality will not be available. Suggestion is installing the app and trying it locally, or in any websocket compliant server.");
-                 location.href = "https://bicchiere.sytes.net"
+                 location.href = "https://bicchiere.sytes.net";
             </script>
             '''
             contents = contents.format(randomcolor,
