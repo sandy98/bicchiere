@@ -1,7 +1,7 @@
 <h1 align="center">Bicchiere</h1>
 
 
-<p align="center"><img title="Un bel bicchiere di Campari" src="https://bicchiere.eu.pythonanywhere.com/static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
+<p align="center"><img title="Un bel bicchiere di Campari" src="https://bicchiere.sytes.net/static/img/bicchiere-rosso-2.jpg" alt="Bicchiere Logo"/></p>
 
 ## Un altro micro-framework Web Python (WSGI)
 
