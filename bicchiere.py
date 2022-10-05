@@ -1544,7 +1544,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 3, 1)
+    __version__ = (1, 3, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1737,6 +1737,15 @@ class BicchiereMiddleware:
 
         route_regex = re.sub(param_regex, regex_parser, route)
         return re.compile("^{}$".format(route_regex)), dict(zip(params, params_types))
+
+    def _send_response(self, status_msg, response):
+            self.start_response(status_msg, self.headers.items())
+            retval = b""
+            for i in range(len(response)):
+                retval += self.tobytes(response[i])
+            self.clear_headers()
+            return [retval]
+
 
     def __init__(self, application=None, name = None):
         self.application = application
@@ -2322,10 +2331,9 @@ class Bicchiere(BicchiereMiddleware):
             self.debug("Searching for resource '{}'".format(resource))
             if os.path.exists(resource):
                 found = True
-                self.debug(f"RESOURCE {resource} FOUND")
+                #self.debug(f"RESOURCE {resource} FOUND")
                 if os.path.isfile(resource):
-                    mime_type, _ = guess_type(
-                        resource) or ('text/plain', 'utf-8')
+                    mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
                     fp = open(resource, 'rb')
                     response = [b'']
                     r = fp.read(1024)
@@ -2334,24 +2342,22 @@ class Bicchiere(BicchiereMiddleware):
                         r = fp.read(1024)
                     fp.close()
                     del self.headers['Content-Type']
-                    self.headers.add_header(
-                        'Content-Type', mime_type, charset='utf-8')
+                    self.headers.add_header('Content-Type', mime_type, charset='utf-8')
                     status_msg = Bicchiere.get_status_line(200)
                 elif os.path.isdir(resource):
                     del self.headers['Content-Type']
-                    self.headers.add_header(
-                        'Content-Type', 'text/html', charset='utf-8')
+                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
                     if Bicchiere.config.get('allow_directory_listing', False) or Bicchiere.config.get('debug', False):
                         status_msg = Bicchiere.get_status_line(200)
                         response = [
-                            '<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
+                            b'<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
                         response.append(
-                            f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>')
+                            f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>'.encode())
                         left, right = os.path.split(
                             self.environ.get('path_info'.upper()))
                         if left != "/":
                             response.append(
-                                f'<p title="Parent directory"><a href="{left}">..</a></p>')
+                                f'<p title="Parent directory"><a href="{left}">..</a></p>'.encode())
                         l = os.listdir(resource)
                         l.sort()
                         for f in l:
@@ -2359,16 +2365,14 @@ class Bicchiere(BicchiereMiddleware):
                             if os.path.isfile(fullpath) or os.path.isdir(fullpath):
                                 href = os.path.join(
                                     self.environ.get('path_info'.upper()), f)
-                                response.append(
-                                    f'<p><a href="{href}">{f}</a></p>')
+                                response.append(f'<p><a href="{href}">{f}</a></p>'.encode())
                     else:
                         status_msg = Bicchiere.get_status_line(403)
                         response = [f'''<strong>403</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                     {self.environ.get('path_info'.upper())}</span> Directory listing forbidden.''']
                 else:
                     del self.headers['Content-Type']
-                    self.headers.add_header(
-                        'Content-Type', 'text/html', charset='utf-8')
+                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
                     status_msg = Bicchiere.get_status_line(400)
                     response = [f'''<strong>400</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ.get('path_info'.upper())}</span> Bad request, file type cannot be handled.''']
@@ -2377,17 +2381,10 @@ class Bicchiere(BicchiereMiddleware):
                 response = [f'''<strong>404</strong>&nbsp;&nbsp;&nbsp;<span style="color: red;">
                                    {self.environ.get('path_info'.upper())}</span> not found.''']
                 del self.headers['Content-Type']
-                self.headers.add_header(
-                    'Content-Type', 'text/html', charset='utf-8')
+                self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
                 status_msg = Bicchiere.get_status_line(404)
 
-            # self.set_new_start_response()
-            self.start_response(status_msg, self.headers.items())
-            retval = b""
-            for i in range(len(response)):
-                retval += self.tobytes(response[i])
-            self.clear_headers()
-            return retval
+            return self._send_response(status_msg, response)
 
         if len(self.routes) == 0:
             if self.environ['path_info'.upper()] != '/':
@@ -2461,27 +2458,16 @@ class Bicchiere(BicchiereMiddleware):
                                  <span style="color: red;">{self.environ["PATH_INFO"]}</span>
                                  raised an error: <span style="color: red;">{str(exc)}.</span>'''
 
-        if not self.headers_sent:
-            if 'content-type' not in self.headers:
-                if response and self.is_html(response):
-                    self.headers.add_header(
-                        'Content-Type', 'text/html', charset='utf-8')
-                else:
-                    self.headers.add_header(
-                        'Content-Type', 'text/plain', charset='utf-8')
-                # self.set_new_start_response()
-            self.start_response(status_msg, self.headers.items())
+        if not self.headers_sent and 'content-type' not in self.headers:
+            if response and self.is_html(response):
+                self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+            else:
+                self.headers.add_header('Content-Type', 'text/plain', charset='utf-8')
 
-        retval = b""
-
-        if response:
-            response = self.tobytes(response)
-            self.debug(
-                f"\n\nRESPONSE: '{response[ : 240].decode('utf-8')}{'...' if len(response) > 240 else ''}'")
-            retval = response
-
-        self.clear_headers()
-        return [retval]
+        if response and self.config.debug:
+            r = self.tobytes(response)
+            self.debug(f"\n\nRESPONSE: '{r[ : 240].decode('utf-8')}{'...' if len(r) > 240 else ''}'")
+        return self._send_response(status_msg, response or b'')
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
@@ -3687,7 +3673,7 @@ class AsyncBicchiere(Bicchiere):
         start = dict(type = "http.response.start", status = 200, 
         headers = [[b'content-type', b'text/html' if self.is_html(body) else b'text/plain']])
 
-        contents = dict(type = 'http.response.body', body = body)
+        contents = dict(type = 'http.response.body', body = body, more_body = False)
 
         await send(start)
         await send(contents)
