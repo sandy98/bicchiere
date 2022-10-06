@@ -3,21 +3,21 @@
 
 import os, json
 
-try:
-    import activate
-except:
-    atp_path = './bin/activate_this.py'
-    if os.path.exists(atp_path):
-        print('Activating virtual environment.')
-        exec(open(atp_path).read(), dict(__file__ = atp_path))
-        print('Virtual environment activated.')
-    else:
-        print("No virtual environment.")
-
+if __name__ == '__main__':
+    try:
+        import activate
+    except:
+        atp_path = './bin/activate_this.py'
+        if os.path.exists(atp_path):
+            print('Activating virtual environment.')
+            exec(open(atp_path).read(), dict(__file__ = atp_path))
+            print('Virtual environment activated.')
+        else:
+            print("No virtual environment.")
 
 from datetime import datetime
 try:
-    from bicchiere import Bicchiere, SqliteSession, WebSocket, WebSocketError, TWServer, FixedHandler
+    from bicchiere import Bicchiere, SqliteSession, WebSocket, WebSocketError, BicchiereServer, BicchiereHandler
 except:
     print("You must run 'pip install bicchiere' prior to using this app")
     os.sys.exit(1)
@@ -257,7 +257,7 @@ def main():
         #app.debug(f"Using web socket class: {'wsocket.WebSocket' if WS else 'bicchiere.WebSocket'}")
         app.debug(f"Using web socket class: {'bicchiere.WebSocket'}")
         app.run(host = "127.0.0.1", application=app,
-        server_name="twserver", handler_class = FixedHandler, server_class = TWServer)
+        server_name="bicchiereserver", handler_class = BicchiereHandler, server_class = BicchiereServer)
     except KeyboardInterrupt:
         print("\nServer exiting...")
         os.sys.exit()        
