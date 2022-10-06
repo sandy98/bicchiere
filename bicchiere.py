@@ -1874,13 +1874,140 @@ class BicchiereMiddleware:
         #else:
         #    self.form = {}
 
+    def _try_mounted(self):
+        old_env = None
+        full_path = self.environ['PATH_INFO']
+        status_msg = None
+        response = None
+
+        for r, app in self.mounted_apps.items():
+            if full_path.startswith(r):
+                self.debug(f"found path prefix {r} in mounted app.")
+                new_env = self.environ
+                old_env = new_env.copy()
+                mounted_path = full_path.replace(r, '')
+                if not mounted_path.startswith("/"):
+                    mounted_path = f"/{mounted_path}"
+                new_env['PATH_INFO'] = mounted_path
+                if asyncio.iscoroutinefunction(app):
+                    #response = asyncio.run(app(new_env, self.no_response if app is not self else start_response))
+                    response = asyncio.run(app(new_env, self._start_response))
+                    self._start_response = self.no_response
+                else:
+                    #response = app(new_env, self.no_response if app is not self else start_response)
+                    response = app(new_env, self._start_response)
+                    self._start_response = self.no_response
+                return "200 OK", response
+        if old_env:
+            self.environ = old_env
+        self.environ['PATH_INFO'] = f"{self.path_prefix}{self.environ.get('PATH_INFO')}"
+        if not response:
+            return self._abort(404, self.environ.get('path_info'.upper()), 
+            " not found.")
+
+    def _try_routes(self):
+        route = None
+        try:
+            full_path = self.environ['PATH_INFO']
+            route = self.get_route_match(full_path)
+            if route:
+                if self.environ.get('REQUEST_METHOD', 'GET') in route.methods:
+                    status_msg = Bicchiere.get_status_line(200)
+                    if asyncio.iscoroutinefunction(route.func):
+                        response = asyncio.run(route.func(**route.args))
+                    else:
+                        response = route.func(**route.args)
+                    return status_msg, response
+                else:
+                    return self._abort(405, self.environ['REQUEST_METHOD'],
+                    f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
+            else:
+                return self._abort(404, self.environ.get('path_info'.upper()), " not found.")
+        except Exception as exc:
+            return self._abort(500, self.environ['PATH_INFO'],
+                f'raised an error: {str(exc)}')
+            
+
+    def _try_default(self):
+        if len(self.routes) == 0 and len(self.mounted_apps) == 0:
+            if self.environ['path_info'.upper()] != '/':
+                status_msg, response = self._abort(404, self.environ['path_info'.upper()], " not found.")
+            else:
+                status_msg = Bicchiere.get_status_line(200)
+                response = self.default_handler()
+            return status_msg, response
+        return None, None
+
+    def _try_static(self):
+        if self.environ.get('path_info'.upper()).startswith(self.static_path):
+            found = False
+            resource = f"{os.getcwd()}{self.environ.get('path_info'.upper())}"
+            self.debug("Searching for resource '{}'".format(resource))
+            if os.path.exists(resource):
+                found = True
+                #self.debug(f"RESOURCE {resource} FOUND")
+                if os.path.isfile(resource):
+                    mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
+                    fp = open(resource, 'rb')
+                    response = [b'']
+                    r = fp.read(1024)
+                    while r:
+                        response.append(r)
+                        r = fp.read(1024)
+                    fp.close()
+                    del self.headers['Content-Type']
+                    self.headers.add_header('Content-Type', mime_type, charset='utf-8')
+                    status_msg = Bicchiere.get_status_line(200)
+                elif os.path.isdir(resource):
+                    del self.headers['Content-Type']
+                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+                    if Bicchiere.config.get('allow_directory_listing', False) or Bicchiere.config.get('debug', False):
+                        status_msg = Bicchiere.get_status_line(200)
+                        response = [b'<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
+                        response.append(f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>'.encode())
+                        left, right = os.path.split(self.environ.get('path_info'.upper()))
+                        if left != "/":
+                            response.append(f'<p title="Parent directory"><a href="{left}">..</a></p>'.encode())
+                        l = os.listdir(resource)
+                        l.sort()
+                        for f in l:
+                            fullpath = os.path.join(resource, f)
+                            if os.path.isfile(fullpath) or os.path.isdir(fullpath):
+                                href = os.path.join(
+                                    self.environ.get('path_info'.upper()), f)
+                                response.append(f'<p><a href="{href}">{f}</a></p>'.encode())
+                    else:
+                        status_msg, response = self._abort(403, self.environ.get('path_info'.upper()), 
+                        'Directory listing forbidden')
+                else:
+                    status_msg, response = self._abort(400, self.get_status_code(400).get('status_msg'), 
+                    'Bad request, file type cannot be handled.')
+            else:
+                status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), 
+                    " not found.")
+            return status_msg, response
+        else:
+            return None, None
+
+
     def _send_response(self, status_msg, response):
-            self.start_response(status_msg, self.headers.items())
-            retval = b""
-            for i in range(len(response)):
-                retval += self.tobytes(response[i])
-            self.clear_headers()
-            return [retval]
+
+        if not self.headers_sent and 'content-type' not in self.headers:
+            if response and self.is_html(response):
+                self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+            else:
+                self.headers.add_header('Content-Type', 'text/plain', charset='utf-8')
+
+        if response and self.config.debug:
+            r = self.tobytes(response)
+            self.debug(f"\n\nRESPONSE: '{r[ : 240].decode('utf-8')}{'...' if len(r) > 240 else ''}'")
+
+        self.start_response(status_msg, self.headers.items())
+        retval = b""
+        for i in range(len(response)):
+            retval += self.tobytes(response[i])
+        #self.clear_headers()
+        return [retval]
 
     def init_local_data(self):
         "Makes Bicchiere thread safe by assigning vars to thread local data"
@@ -2231,6 +2358,8 @@ class BicchiereMiddleware:
         self.logger = logger
         self.path_prefix = ""
         self.mounted_apps = dict()
+        self.static_root = Bicchiere.config.get('static_directory', 'static')
+        self.static_path = f'/{self.static_root}'
         self.init_local_data()
 
     def __call__(self, environ, start_response):
@@ -2350,137 +2479,28 @@ class Bicchiere(BicchiereMiddleware):
 
         self._init_args()
 
-    # def __iter__(self):
-
-        response = None
-        #status_msg = "404 Not found"
-        status_msg = Bicchiere.get_status_line(200)
-
-        static_root = Bicchiere.config.get('static_directory', 'static')
-        static_path = f'/{static_root}'
-
         response = None
         status_msg = None
-        old_env = None
 
-        if self.environ.get('path_info'.upper()).startswith(static_path):
-            found = False
-            resource = f"{os.getcwd()}{self.environ.get('path_info'.upper())}"
-            self.debug("Searching for resource '{}'".format(resource))
-            if os.path.exists(resource):
-                found = True
-                #self.debug(f"RESOURCE {resource} FOUND")
-                if os.path.isfile(resource):
-                    mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
-                    fp = open(resource, 'rb')
-                    response = [b'']
-                    r = fp.read(1024)
-                    while r:
-                        response.append(r)
-                        r = fp.read(1024)
-                    fp.close()
-                    del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', mime_type, charset='utf-8')
-                    status_msg = Bicchiere.get_status_line(200)
-                elif os.path.isdir(resource):
-                    del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
-                    if Bicchiere.config.get('allow_directory_listing', False) or Bicchiere.config.get('debug', False):
-                        status_msg = Bicchiere.get_status_line(200)
-                        response = [b'<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
-                        response.append(f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>'.encode())
-                        left, right = os.path.split(self.environ.get('path_info'.upper()))
-                        if left != "/":
-                            response.append(f'<p title="Parent directory"><a href="{left}">..</a></p>'.encode())
-                        l = os.listdir(resource)
-                        l.sort()
-                        for f in l:
-                            fullpath = os.path.join(resource, f)
-                            if os.path.isfile(fullpath) or os.path.isdir(fullpath):
-                                href = os.path.join(
-                                    self.environ.get('path_info'.upper()), f)
-                                response.append(f'<p><a href="{href}">{f}</a></p>'.encode())
-                    else:
-                        status_msg, response = self._abort(403, self.environ.get('path_info'.upper()), 
-                        'Directory listing forbidden')
-                else:
-                    status_msg, response = self._abort(400, self.get_status_code(400).get('status_msg'), 
-                    'Bad request, file type cannot be handled.')
-            else:
-                status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), 
-                    f"{''}</span> not found.")
-
+        status_msg, response = self._try_static()
+        if status_msg and response:
             return self._send_response(status_msg, response)
 
-        if len(self.routes) == 0 and len(self.mounted_apps) == 0:
-            if self.environ['path_info'.upper()] != '/':
-                del self.headers['Content-Type']
-                self.headers.add_header(
-                    'Content-Type', 'text/html', charset="utf-8")
-                # self.set_new_start_response()
-                status_msg = Bicchiere.get_status_line(404)
-                response = f"404 {self.environ['path_info'.upper()]} not found."
-            else:
-                #status_msg = "200 OK"
-                status_msg = Bicchiere.get_status_line(200)
-                response = self.default_handler()
-        else:
-            route = None
-            try:
-                #full_path = f"{self.path_prefix}{self.environ['PATH_INFO']}"
-                full_path = self.environ['PATH_INFO']
-                route = self.get_route_match(full_path)
-                if route:
-                    if self.environ.get('REQUEST_METHOD', 'GET') in route.methods:
-                        status_msg = Bicchiere.get_status_line(200)
-                        if asyncio.iscoroutinefunction(route.func):
-                            response = asyncio.run(route.func(**route.args))
-                        else:
-                            response = route.func(**route.args)
-                    else:
-                        status_msg, response = self._abort(405, self.environ['REQUEST_METHOD'],
-                        f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
-                else:
-                    for r, app in self.mounted_apps.items():
-                        if full_path.startswith(r):
-                            self.debug(f"found path prefix {r} in mounted app.")
-                            new_env = self.environ
-                            old_env = new_env.copy()
-                            mounted_path = full_path.replace(r, '')
-                            if not mounted_path.startswith("/"):
-                                mounted_path = f"/{mounted_path}"
-                            new_env['PATH_INFO'] = mounted_path
-                            response = None
-                            if asyncio.iscoroutinefunction(app):
-                                #response = asyncio.run(app(new_env, self.no_response if app is not self else start_response))
-                                response = asyncio.run(app(new_env, self._start_response))
-                                self._start_response = self.no_response
-                            else:
-                                #response = app(new_env, self.no_response if app is not self else start_response)
-                                response = app(new_env, self._start_response)
-                                self._start_response = self.no_response
-                            break
-                    if old_env:
-                        self.environ = old_env
-                    self.environ['PATH_INFO'] = f"{self.path_prefix}{self.environ.get('PATH_INFO')}"
-                    if not response:
-                        status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), 
-                        f"{''}</span> not found.")
-            except Exception as exc:
-                status_msg, response = self._abort(500, self.environ['PATH_INFO'],
-                 f'raised an error: {str(exc)}')
+        status_msg, response = self._try_default()
+        if status_msg and response:
+            return self._send_response(status_msg, response)
 
-        if not self.headers_sent and 'content-type' not in self.headers:
-            if response and self.is_html(response):
-                self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
-            else:
-                self.headers.add_header('Content-Type', 'text/plain', charset='utf-8')
+        status_msg, response = self._try_mounted()
+        if status_msg and response:
+            return self._send_response(status_msg, response)
 
-        if response and self.config.debug:
-            r = self.tobytes(response)
-            self.debug(f"\n\nRESPONSE: '{r[ : 240].decode('utf-8')}{'...' if len(r) > 240 else ''}'")
+        status_msg, response = self._try_routes()
+        if status_msg and response:
+            return self._send_response(status_msg, response)
 
-        return self._send_response(status_msg, response or b'')
+        return self._send_response("404 Not found", "404 Not found")
+
+        #return self._send_response(status_msg, response or b'')
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
