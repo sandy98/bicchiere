@@ -83,6 +83,18 @@ def update_git():
     os.system(f"git commit -m'version {version} {commit_message}'")
     os.system("git push origin main --tags")
 
+def  remote_login():
+    while True:
+        print()
+        os.sys.stdout.write("\nLogin to user@site: ")
+        os.sys.stdout.flush()
+        login = os.sys.stdin.readline().strip()
+        if login.lower() == "q":
+            print("Done with ssh.")
+            return
+        print(f"Logging in to {login}")
+        os.system(f"ssh {login}")
+
 tasks = [cleaning_src,
             update_version,
             copy_files_src,
@@ -90,7 +102,8 @@ tasks = [cleaning_src,
             upload_pypi,
             clean_src,
             upgrade_oven,
-            update_git
+            update_git,
+            remote_login
         ]
 
 def init_vars():
