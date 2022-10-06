@@ -1544,7 +1544,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 3, 4)
+    __version__ = (1, 3, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2045,11 +2045,17 @@ class BicchiereMiddleware:
             if not connection or not "Upgrade" in connection:
                 self.debug(
                     f'Error with HTTP_CONNECTION header: {repr(self.environ.get("HTTP_CONNECTION"))}')
-                return "400 Not a websocket request."
+                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"), 
+                "Not a websocket request")
+                self.start_response(status_msg, [('Content-Type', 'text/html; charset=utf-8')])
+                return response
             upgrade = self.environ.get("HTTP_UPGRADE")
             if not upgrade or upgrade != "websocket":
                 self.debug(f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
-                return "400 Not a websocket request."
+                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"), 
+                "Not a websocket request")
+                self.start_response(status_msg, [('Content-Type', 'text/html; charset=utf-8')])
+                return response
             wsversion = self.environ.get("HTTP_SEC_WEBSOCKET_VERSION")
             if not wsversion or wsversion not in known_versions:
                 self.debug(
@@ -2490,15 +2496,16 @@ class Bicchiere(BicchiereMiddleware):
         if status_msg and response:
             return self._send_response(status_msg, response)
 
+        status_msg, response = self._try_routes()
+        if status_msg and response and re.match(r"^[25]", status_msg):
+            return self._send_response(status_msg, response)
+
         status_msg, response = self._try_mounted()
         if status_msg and response:
             return self._send_response(status_msg, response)
 
-        status_msg, response = self._try_routes()
-        if status_msg and response:
-            return self._send_response(status_msg, response)
-
-        return self._send_response("404 Not found", "404 Not found")
+        return self._send_response(self._abort(404, self.environ['PATH_INFO'],
+        " not found AT ALL."))
 
         #return self._send_response(status_msg, response or b'')
 
