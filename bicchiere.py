@@ -21,23 +21,24 @@ import urllib.request
 import wsgiref.util
 import zlib
 
-from email import charset
+#from email import charset
 from io import StringIO
-from datetime import datetime, timedelta
+from datetime import datetime #, timedelta
 from time import time as timestamp, sleep
 import time as o_time
 from functools import reduce, wraps, partial
-from http.cookies import SimpleCookie, Morsel
+from http.cookies import SimpleCookie #, Morsel
 from socketserver import ThreadingMixIn
 import socket
-from socket import error as socket_error, socket as Socket
+from socket import error as socket_error #, socket as Socket
 from wsgiref.headers import Headers
-from wsgiref.simple_server import make_server, ServerHandler, WSGIRequestHandler, WSGIServer, demo_app as simple_demo_app
+from wsgiref.simple_server import make_server, ServerHandler, WSGIRequestHandler, WSGIServer 
+from wsgiref.simple_server import demo_app as simple_demo_app
 from uuid import uuid4
 from urllib.parse import parse_qsl
 from mimetypes import guess_type
 import wsgiref.util
-from xmlrpc.client import Boolean
+#from xmlrpc.client import Boolean
 
 # Prepares logging
 
@@ -46,6 +47,7 @@ logging.basicConfig()
 
 # End of logging part
 
+### Part I - The sync world
 
 # Websocket auxiliary classes and stuff
 
@@ -1544,7 +1546,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 3, 5)
+    __version__ = (1, 4, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1568,8 +1570,9 @@ class BicchiereMiddleware:
     def redirect(self, path, status_code=302, status_msg="Found"):
         self.headers.add_header('Location', path)
         status_line = f"{status_code} {status_msg}"
-        # self.set_new_start_response(status=status_line)
+        self.logger.info(f"Redirecting (status code {status_code}) to {path}")
         self.start_response(status_line, self.headers.items())
+        self._start_response = self.no_response
         return [status_line.encode("utf-8")]
 
 
@@ -2000,7 +2003,15 @@ class BicchiereMiddleware:
 
         if response and self.config.debug:
             r = self.tobytes(response)
-            self.debug(f"\n\nRESPONSE: '{r[ : 240].decode('utf-8')}{'...' if len(r) > 240 else ''}'")
+            if hasattr(response, "split"):
+                dbg_msg_l = response.split('\n')
+            else:
+                dbg_msg_l = response
+            dbg_msg = ''
+            for msg in dbg_msg_l:
+                if len(msg) > len(dbg_msg):
+                    dbg_msg = msg
+            self.debug(f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
 
         self.start_response(status_msg, self.headers.items())
         retval = b""
@@ -2490,24 +2501,27 @@ class Bicchiere(BicchiereMiddleware):
 
         status_msg, response = self._try_static()
         if status_msg and response:
+            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_default()
         if status_msg and response:
+            self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_routes()
         if status_msg and response and re.match(r"^[25]", status_msg):
+            self.logger.info(f"Proceeding from _try_routes with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_mounted()
         if status_msg and response:
+            self.logger.info(f"Proceeding from _try_mounted with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         return self._send_response(self._abort(404, self.environ['PATH_INFO'],
         " not found AT ALL."))
 
-        #return self._send_response(status_msg, response or b'')
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
@@ -3031,11 +3045,15 @@ class Bicchiere(BicchiereMiddleware):
             MenuItem("Chat Room Websockets Example App - gevent version", "/downlchatroom?version=gevent"))
         dropdown.addItem(
             MenuItem("Chat Room Websockets Example App - Bicchiere Websocket version", "/downlchatroom?version=native"))
-        menu.addItem(dropdown)
 
+        dropdown = DropdownMenu("WebSocket")
+        dropdown.addItem(
+            MenuItem("Echo Server Example", "/echo"))
+
+        menu.addItem(dropdown)
         menu.addItem(MenuItem("About", "/about"))
 
-        @app.get("/wstest")
+        @app.get("/echo/wstest")
         @app.websocket_handler
         async def wstest():
             wsock = app.environ.get("wsgi.websocket")
@@ -3097,13 +3115,108 @@ class Bicchiere(BicchiereMiddleware):
 
             return b''
 
-        @app.get('/')
-        # @app.html_content()
+
+        @app.get("/")
         def home():
-            randomcolor = random.choice(
-                ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
-            #prefix = Bicchiere.get_demo_prefix().format(normalize_css = '', demo_css = Bicchiere.get_demo_css())
+            #randomcolor = random.choice(
+            #    ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
             heading = "WSGI, Bicchiere Flavor"
+            #url = "https://pypi.org/project/bicchiere/"
+            #inner_contents = urllib.request.urlopen(url).read().decode()
+            # contents = """
+            # <iframe
+            #   style="scroll = auto; height: 30em; min-height: 30em; width: 100%; min-width: 100%; border: none; background: white;" 
+            #   src="https://pypi.org/project/bicchiere/"
+            # />
+            # """
+            inner_contents = """
+          <div class="project-description" style="padding: 1em; padding-bottom: 2em;">
+<p align=center><img src="https://warehouse-camo.ingress.cmh1.psfhosted.org/71d9fac8780e8e001faaab7589244d9f1b8ba56e/68747470733a2f2f6269636368696572652e73797465732e6e65742f7374617469632f696d672f6269636368696572652d726f73736f2d322e6a7067" alt="Bicchiere Logo"></p>
+<h2>Yet another Python web (WSGI) micro-framework</h2>
+<p>Following <a href="https://flask.palletsprojects.com/en/2.1.x/" rel=nofollow>Flask</a> and <a href="https://bottlepy.org/docs/dev/" rel=nofollow>Bottle</a> footsteps, adding a bit of italian flavor :-)</p>
+<h2>Install</h2>
+<pre lang=bash>pip install bicchiere
+</pre>
+<h2><a href="https://bicchiere.sytes.net" rel=nofollow>Project Demo App</a></h2>
+<p>Current version: 1.3.5</p>
+<p>
+    <a href="https://pypi.python.org/pypi/bicchiere" rel=nofollow><img alt="GitHub tag (latest by date)" src="https://warehouse-camo.ingress.cmh1.psfhosted.org/513b792130833b398f24fb529aa8e3f5913d3a50/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f762f7461672f73616e647939382f6269636368696572653f636f6c6f723d253233306363303030266c6162656c3d626963636869657265"></a>           
+       
+    <a href="https://pepy.tech/project/bicchiere" rel=nofollow>
+        <img src="https://warehouse-camo.ingress.cmh1.psfhosted.org/3b92fa3bf75d67905050c519d1027d52af3da3b4/68747470733a2f2f7374617469632e706570792e746563682f706572736f6e616c697a65642d62616467652f6269636368696572653f706572696f643d746f74616c26756e6974733d696e7465726e6174696f6e616c5f73797374656d266c6566745f636f6c6f723d626c61636b2672696768745f636f6c6f723d626c7565266c6566745f746578743d446f776e6c6f616473">
+    </a>
+</p>
+<h2>A drop from Bicchiere</h2>
+<pre lang=python3 style="background: #eeeeee; padding: 8px;"><span class=kn>from</span> <span class=nn>bicchiere</span> <span class=kn>import</span> <span class=n>Bicchiere</span>
+
+<span class=n>app</span> <span class=o>=</span> <span class=n>Bicchiere</span><span class=p>()</span>
+<span class=ow>or</span>
+<span class=n>app</span> <span class=o>=</span> <span class=n>Bicchiere</span><span class=p>(</span><span class=s2>"La mia bella App"</span><span class=p>)</span>
+
+<span class=nd>@app</span><span class=o>.</span><span class=n>get</span><span class=p>(</span><span class=s2>"/"</span><span class=p>)</span>
+<span class=k>def</span> <span class=nf>home</span><span class=p>():</span>
+    <span class=k>return</span> <span class=s2>"Bon giorno, cosa bevete oggi?"</span>
+    
+<span class=k>if</span> <span class=vm>__name__</span> <span class=o>==</span> <span class=s2>"__main__"</span><span class=p>:</span>
+    <span class=c1>#This will run default server on http://localhost:8086</span>
+    <span class=n>app</span><span class=o>.</span><span class=n>run</span><span class=p>()</span>
+</pre>
+<p>... and this is just about the classical WSGI <strong>Hello, World</strong>, for everything else please refer to <a href="https://github.com/sandy98/bicchiere/wiki" rel=nofollow>Bicchiere Wiki</a></p>
+<p>Well... not really. A bit of rationale is in order here.</p>
+<p>So, why Bicchiere?</p>
+<ul>
+<li>
+<p>For one thing, reinventing the wheel is not only fun but highly educational, so, by all means, do it!</p>
+</li>
+<li>
+<p>I like Flask and Bottle. A lot. Both have things that I highly appreciate, simplicity in the first
+place. But it doesn't end there.</p>
+</li>
+<li>
+<p>There's also the single file/no dependencies approach (Bottle), which I intend to mimic with Bicchiere. Although not a   mandatory thing, I like  it that way.</p>
+</li>
+<li>
+<p>Built-in sessions (Flask). Although the user of the library must be free to choose whatever he likes regarding sessions or any other component of the application for that matter, I think session-handling is one of those must-have things in any web app these days. So, I provided basic session handling mechanism, in 3 flavors: memory, filesystem, and sqlite. This was the most that could be done without falling out of the boundaries of the Python Standard Library. Details on this at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-session" rel=nofollow>the wiki (under construction)</a></p>
+</li>
+<li>
+<p>Built-in templating mechanism (Bottle). Similar considerations apply. In my opinion, this is also a must have, regardless how micro is the framework/library. Then again, end-user must be free to choose. As a good WSGI compliant middleware, Bicchiere doesn't come in the way of the user if he prefers to use <a href="https://www.makotemplates.org/" rel=nofollow>Mako</a>, <a href="https://jinja.palletsprojects.com/en/3.1.x/" rel=nofollow>Jinja2</a>, <a href="https://genshi.edgewall.org/" rel=nofollow>Genshi</a> or whatever he likes. Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-templates" rel=nofollow>the wiki (under construction)</a></p>
+</li>
+<li>
+<p>WebSockets handling: to me, this is the fruit on the cake, for various reasons:</p>
+<ol>
+<li>It's been said that it can't be done under WSGI, reason the more to do it.</li>
+<li>Real time communication looks like another must have in the current landscape of web app development</li>
+<li>Then again, its a lot of fun. A lot of pain, too...
+In any case, Bicchiere comes bundled with native WebSocket support - just taken out from the oven :-))
+Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocket" rel=nofollow>the wiki (under construction)</a> . Regretably, <a href="https://bicchiere.eu.pythonanywhere.com" rel=nofollow>the original Demo App</a> won't work with websockets, because <strong>Pythonanywhere</strong> hasn't yet implemented the feature. As of now, there's a mirror at <a href="http://bicchiere.sytes.net" rel=nofollow>bicchiere.sytes.net</a> which works fine, test at the home page and all. In any case, these issues are related to reverse proxy configuration and have nothing to see with the app/library itself.</li>
+</ol>
+</li>
+<li>
+<p>And still, there's a lot of stuff to be mentioned. More to come...</p>
+</li>
+</ul>
+
+          </div>            
+            """
+            contents = """
+            <div
+              id = "pypi-contents"
+              style="scroll = auto; height: 30em; min-height: 30em; width: 100%; min-width: 100%; border: none; background: white;" 
+            >
+            {}
+            </div>
+            """.format(inner_contents)
+            info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Echo Server",
+                                             menu_content=str(menu),
+                                             main_contents=info)
+
+        @app.get('/echo')
+        # @app.html_content()
+        def echo():
+            randomcolor = random.choice(['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
+            heading = "Bicchiere WebSocket Test - Simple Echo Server"
             onkeyup = """
                txt_chat.addEventListener("keyup", function(ev) {
                  if (ev.keyCode != 13 || !ev.target.value.length || myws.readyState != 1)
@@ -3133,15 +3246,7 @@ class Bicchiere(BicchiereMiddleware):
                }
             """
             contents = '''
-            <h2 style="font-style: italic">Buona sera, oggi beviamo un buon bicchiere di <span style="color: {0};">{1}</span>!</h2>
-            <h3>Portato cui da Bicchiere <span style="color: {3};">v{2}</span></h3>
-            <div>
-               <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
-               &nbsp;&nbsp;&nbsp;
-               <a href="https://pepy.tech/project/bicchiere" rel="nofollow" target="_blank">
-                  <img src="https://static.pepy.tech/personalized-badge/bicchiere?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads"/>
-               </a>
-            </div>
+            <br>
             <hr>
             <div id="chat_send">
               <label for="txt_chat">Send message to Bicchiere echo server</label>
@@ -3153,29 +3258,22 @@ class Bicchiere(BicchiereMiddleware):
             <script>
                var txt_chat = document.getElementById("txt_chat");
                var chat_msgs = document.getElementById("chat_msgs");
-               {4}
-               {5}
-               var myws = new WebSocket(location.href.replace("http", "ws") + "wstest")
+               {0}
+               {1}
+               var myws = new WebSocket(location.href.replace("http", "ws") + "/wstest")
                myws.onopen = ev => console.log("My beautiful websocket is open! : " + ev.data ? ev.data : ev)
                myws.onerror = ev => console.info(ev)
                myws.onclose = ev => console.log("Websocket is now closing :-( " + ev.data ? ev.data : ev)
-               {6}
+               {2}
                if (location.href.indexOf("pythonanywhere") > -1)
                  //alert("Regretably websockets do not work in Pythonanywhere, so webchat functionality will not be available. Suggestion is installing the app and trying it locally, or in any websocket compliant server.");
-                 location.href = "https://bicchiere.sytes.net";
+                 location.href = location.href.replace("eu.pythonanywhere.com", "sytes.net");
             </script>
             '''
-            contents = contents.format(randomcolor,
-                                       bevanda,
-                                       app.version,
-                                       random.choice(["green", "red"]),
-                                       onkeyup, print_msg, onmessage
-                                       )
+            contents = contents.format(onkeyup, print_msg, onmessage)
             info = Bicchiere.get_demo_content().format(heading=heading, contents=contents)
-            # return "{}{}{}".format(prefix, info, suffix)
-            # Demo page template includes 3 placeholders: 'page_title', 'menu_content' and 'main_contents'
             return Bicchiere.render_template(demo_page_template,
-                                             page_title="Demo Bicchiere App - Home",
+                                             page_title="Demo Bicchiere App - Echo Server",
                                              menu_content=str(menu),
                                              main_contents=info)
 
@@ -3320,7 +3418,7 @@ class Bicchiere(BicchiereMiddleware):
                     app.debug("Exception in factorial: {}".format(str(exc)))
                     n = number
             result = reduce(lambda a, b: a * b, range(1, n + 1))
-            pinfo = f'<div class="wrapped">El factorial de {n} es <br/>&nbsp;<br/>{result}</div>'
+            pinfo = f'<div class="wrapped">Factorial of {n} is: <br/>&nbsp;<br/>{result}</div>'
             info = Bicchiere.get_demo_content().format(
                 heading="Factorials", contents=pinfo)
             return Bicchiere.render_template(demo_page_template,
@@ -3449,6 +3547,15 @@ class Bicchiere(BicchiereMiddleware):
         @app.get("/about")
         def about():
             contents = """
+            <hr>
+            <p style="text-align: left;">
+               <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
+                &nbsp;&nbsp;&nbsp;
+               <a href="https://pepy.tech/project/bicchiere" rel="nofollow" target="_blank">
+                  <img src="https://static.pepy.tech/personalized-badge/bicchiere?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads"/>
+               </a>
+            </p>
+            <hr>
             <p>
             Lorem ipsum dolor sit amet consectetur adipisicing elit. Maxime mollitia,
             molestiae quas vel sint commodi repudiandae consequuntur voluptatum laborum
@@ -3473,13 +3580,6 @@ class Bicchiere(BicchiereMiddleware):
             quasi aliquam eligendi, placeat qui corporis!
             </p>
             <hr>
-            <p style="text-align: right;">
-               <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           
-                &nbsp;&nbsp;&nbsp;
-               <a href="https://pepy.tech/project/bicchiere" rel="nofollow" target="_blank">
-                  <img src="https://static.pepy.tech/personalized-badge/bicchiere?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads"/>
-               </a>
-            </p>
             """
             info = Bicchiere.get_demo_content().format(
                 heading="The proverbial about page", contents=contents)
@@ -3692,13 +3792,92 @@ class Bicchiere(BicchiereMiddleware):
 
 # End main Bicchiere App class
 
-# Async descendant of Bicchiere
+# Miscelaneous exports
 
+
+def demo_app():
+    "Returns demo app for test purposes"
+    return Bicchiere.demo_app()
+
+
+application = demo_app()  # Rende uWSGI felice :-)
+
+def run(host='localhost', port=8086, app=application, server_name='bicchiereserver'):
+    "Shortcut to run demo app, or any WSGI/ASGI compliant app, for that matter"
+    runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
+    
+    if Bicchiere.is_wsgi(app):
+        if server_name in Bicchiere.known_wsgi_servers:
+            pass
+        else:
+            print(f"You must choose a WSGI server to run a WSGI app.\nQuitting.\n")
+            os.sys.exit()
+    
+    if Bicchiere.is_asgi(app):
+        if server_name in Bicchiere.known_asgi_servers:
+            pass
+        else:
+            print(f"You must choose an ASGI server to run an ASGI app.\nQuitting.\n")
+            os.sys.exit()
+
+    runner.run(host, port, app, server_name)
+
+# End Miscelaneous exports
+
+
+### End of Part I - The sync world
+
+#########################################################################################################
+
+### Part II - The async world
+
+# Async descendant of Bicchiere
 
 class AsyncBicchiere(Bicchiere):
     "ASGI version of Bicchiere"
     
     async def __call__(self, context, receive, send):
+        # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
+        self.init_local_data()
+               
+        self.environ = context
+        self._start_response = self.no_response
+
+        if not self._test_environ():
+            return [b'']
+
+        self._config_environ()
+
+        self._init_session()
+
+        self._init_args()
+
+        response = None
+        status_msg = None
+
+        status_msg, response = self._try_static()
+        if status_msg and response:
+            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        status_msg, response = self._try_default()
+        if status_msg and response:
+            self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        status_msg, response = self._try_routes()
+        if status_msg and response and re.match(r"^[235]", status_msg):
+            self.logger.info(f"Proceeding from _try_routes with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        status_msg, response = self._try_mounted()
+        if status_msg and response:
+            self.logger.info(f"Proceeding from _try_mount with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        return self._send_response(self._abort(404, self.environ['PATH_INFO'],
+        " not found AT ALL."))
+
         self.environ = context
         if len(self.routes) == 0:
             body = self.tobytes(await self.demo_app())
@@ -3736,38 +3915,9 @@ class AsyncBicchiere(Bicchiere):
 
 # End AsyncBicchiere
 
-# Miscelaneous exports
-
-
-def demo_app():
-    "Returns demo app for test purposes"
-    return Bicchiere.demo_app()
-
-
-application = demo_app()  # Rende uWSGI felice :-)
 asgi_application = AsyncBicchiere.demo_app()
 
-def run(host='localhost', port=8086, app=application, server_name='bicchiereserver'):
-    "Shortcut to run demo app, or any WSGI/ASGI compliant app, for that matter"
-    runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
-    
-    if Bicchiere.is_wsgi(app):
-        if server_name in Bicchiere.known_wsgi_servers:
-            pass
-        else:
-            print(f"You must choose a WSGI server to run a WSGI app.\nQuitting.\n")
-            os.sys.exit()
-    
-    if Bicchiere.is_asgi(app):
-        if server_name in Bicchiere.known_asgi_servers:
-            pass
-        else:
-            print(f"You must choose an ASGI server to run an ASGI app.\nQuitting.\n")
-            os.sys.exit()
-
-    runner.run(host, port, app, server_name)
-
-# End Miscelaneous exports
+### End of Part II - The async world
 
 
 # Provervial main function
