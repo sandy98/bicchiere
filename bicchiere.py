@@ -1546,7 +1546,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 4, 1)
+    __version__ = (1, 4, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3138,7 +3138,6 @@ class Bicchiere(BicchiereMiddleware):
 <pre lang=bash>pip install bicchiere
 </pre>
 <h2><a href="https://bicchiere.sytes.net" rel=nofollow>Project Demo App</a></h2>
-<p>Current version: 1.3.5</p>
 <p>
     <a href="https://pypi.python.org/pypi/bicchiere" rel=nofollow><img alt="GitHub tag (latest by date)" src="https://warehouse-camo.ingress.cmh1.psfhosted.org/513b792130833b398f24fb529aa8e3f5913d3a50/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f762f7461672f73616e647939382f6269636368696572653f636f6c6f723d253233306363303030266c6162656c3d626963636869657265"></a>           
        
