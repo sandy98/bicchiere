@@ -1550,7 +1550,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 5, 1)
+    __version__ = (1, 5, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1950,7 +1950,7 @@ class BicchiereMiddleware:
         is_status_line = lambda line: len(line.split()) == 3 and \
             line.split()[1].isdigit() and 90 < int(line.split()[1])  < 1000
         is_header_line = lambda line: len(line.split(b":")) == 2
-        status_line = None
+        status_line = b""
         response = b""
         headers = Headers()
         process = Popen(resource.split(), stdout=PIPE, stdin=form or os.sys.stdin)
@@ -1968,8 +1968,10 @@ class BicchiereMiddleware:
                 logger.info(f"CGI stderr: {line}")
                 break
             if not len(line):
-                pass
-            elif is_status_line(line):
+                if not len(status_line):
+                    logger.debug("Manually adding status line")
+                    status_line = "200 OK"
+            elif is_status_line(line) and not len(status_line):
                 status_line = b" ".join(line.split()[1:])
                 logger.info(f"CGI status line: {status_line}")
             elif is_header_line(line):
@@ -1979,6 +1981,17 @@ class BicchiereMiddleware:
             else:
                 response += line if line else b"" + b"\n"
                 logger.info(f"CGI content line: {line.strip()}")
+
+        if not headers.get("Content-Type"):
+            logger.debug("Manually adding 'Content-Type' header")
+            if BicchiereMiddleware.is_html(response):
+                headers.add_header('Content-Type', 'text/html', charset="utf-8")
+            else:
+                headers.add_header('Content-Type', 'text/plain', charset="utf-8")
+
+        if not len(status_line):
+            logger.debug("Manually adding status line")
+            status_line = b"200 OK"
 
         logger.info(f"Returning with values:\nstatus_line: {repr(status_line)}\nresponse: {repr(response)}\nheaders: {repr(headers)}\n")
         return (status_line.decode() if status_line else "500 No status line", 
