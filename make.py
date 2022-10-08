@@ -86,7 +86,7 @@ def update_git():
 def  remote_login():
     while True:
         print()
-        os.sys.stdout.write("\nLogin to user@site: ")
+        os.sys.stdout.write("\nLogin to user@site ('Q|q' to quit): ")
         os.sys.stdout.flush()
         login = os.sys.stdin.readline().strip()
         if login.lower() == "q":

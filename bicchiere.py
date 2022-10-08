@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from argparse import ArgumentTypeError
+
 import logging
 import inspect
 import struct
@@ -22,7 +22,9 @@ import wsgiref.util
 import zlib
 
 #from email import charset
-from io import StringIO
+from argparse import ArgumentTypeError
+from io import StringIO, BytesIO
+from subprocess import Popen, PIPE
 from datetime import datetime #, timedelta
 from time import time as timestamp, sleep
 import time as o_time
@@ -1535,7 +1537,9 @@ default_config = SuperDict({
     'templates_directory': 'templates',
     'allow_directory_listing': False,
     'pre_load_default_filters': True,
-    'websocket_class': WebSocket
+    'websocket_class': WebSocket,
+    'allow_cgi': True,
+    'cgi_directory': 'cgi-bin'
 })
 
 # End of miscelaneous configuration options
@@ -1546,7 +1550,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 4, 3)
+    __version__ = (1, 5, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1941,14 +1945,83 @@ class BicchiereMiddleware:
             return status_msg, response
         return None, None
 
-    def _try_static(self):
-        if self.environ.get('path_info'.upper()).startswith(self.static_path):
-            found = False
+    @staticmethod
+    def _run_cgi(resource, form = None):
+        is_status_line = lambda line: len(line.split()) == 3 and \
+            line.split()[1].isdigit() and 90 < int(line.split()[1])  < 1000
+        is_header_line = lambda line: len(line.split(b":")) == 2
+        status_line = None
+        response = b""
+        headers = Headers()
+        process = Popen(resource.split(), stdout=PIPE, stdin=form or os.sys.stdin)
+        (output, err) = process.communicate()
+        exit_code = process.wait()
+        if exit_code:
+            return None, None, None
+        if err:
+            output += b"\r\n\r\nstderr:\r\n" + err
+        fp = BytesIO(output.replace(b"\r\n\r\n", b"\r\n \r\n"))
+        lines = iter(map(lambda l: l.strip(), fp.readlines()))
+        for line in lines:
+            if line.startswith(b"stderr"):
+                line = next(lines)
+                logger.info(f"CGI stderr: {line}")
+                break
+            if not len(line):
+                pass
+            elif is_status_line(line):
+                status_line = b" ".join(line.split()[1:])
+                logger.info(f"CGI status line: {status_line}")
+            elif is_header_line(line):
+                k, v = line.split(b":")
+                headers.add_header(k.decode(), v.decode())
+                logger.info(f"CGI header line: {k} = {v}")
+            else:
+                response += line if line else b"" + b"\n"
+                logger.info(f"CGI content line: {line.strip()}")
+
+        logger.info(f"Returning with values:\nstatus_line: {repr(status_line)}\nresponse: {repr(response)}\nheaders: {repr(headers)}\n")
+        return (status_line.decode() if status_line else "500 No status line", 
+        response.decode() if response else "", 
+        headers)
+
+    def _try_cgi(self):
+        curr_path = self.environ.get('PATH_INFO')
+        if self.cgi_path in curr_path:
+            if not self.config.allow_cgi:
+                return self._abort(403, curr_path, "CGI Execution not allowed.")
             resource = f"{os.getcwd()}{self.environ.get('path_info'.upper())}"
             self.debug("Searching for resource '{}'".format(resource))
             if os.path.exists(resource):
-                found = True
-                #self.debug(f"RESOURCE {resource} FOUND")
+                if os.path.isfile(resource):
+                    if os.access(resource, os.X_OK):
+                        resource = resource
+                    elif resource.endswith("py"):
+                        resource = f"python {resource}"
+                    elif resource.endswith("rb"):
+                        resource = f"ruby {resource}"
+                    else:
+                        resource = None
+                    if resource:    
+                         status_line, response, headers = self._run_cgi(resource, self.form)
+                         if status_line and response and headers:
+                            for k, v in headers.items():
+                                self.headers.add_header(k, v)
+                         return status_line, response
+                    else:
+                        return self._abort(500, curr_path, " cannot be executed.")
+                else:
+                    return self._abort(400, curr_path, " is not a file, so it can't be executed.")
+            else:
+                return self._abort(404, curr_path, " resource not found in this server.")
+        else:
+            return None, None    
+
+    def _try_static(self):
+        if self.environ.get('path_info'.upper()).startswith(self.static_path):
+            resource = f"{os.getcwd()}{self.environ.get('path_info'.upper())}"
+            self.debug("Searching for resource '{}'".format(resource))
+            if os.path.exists(resource):
                 if os.path.isfile(resource):
                     mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
                     fp = open(resource, 'rb')
@@ -2377,6 +2450,8 @@ class BicchiereMiddleware:
         self.mounted_apps = dict()
         self.static_root = Bicchiere.config.get('static_directory', 'static')
         self.static_path = f'/{self.static_root}'
+        self.cgi_root = Bicchiere.config.get('cgi_directory', 'cgi-bin')
+        self.cgi_path = f'/{self.cgi_root}'
         self.init_local_data()
 
     def __call__(self, environ, start_response):
@@ -2502,6 +2577,11 @@ class Bicchiere(BicchiereMiddleware):
         status_msg, response = self._try_static()
         if status_msg and response:
             self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        status_msg, response = self._try_cgi()
+        if status_msg and response:
+            self.logger.info(f"Proceeding from _try_cgi with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_default()
@@ -3014,6 +3094,7 @@ class Bicchiere(BicchiereMiddleware):
         dropdown.addItem(MenuItem("Hello Page", "/hello"))
         dropdown.addItem(MenuItem("HTTP and WSGI variables", "/environ"))
         dropdown.addItem(MenuItem("Upload example", "/upload"))
+        dropdown.addItem(MenuItem("CGI examples", "/cgi"))
         dropdown.addItem(MenuItem("Favicon - Text Mode", "/favicon.ico"))
         dropdown.addItem(MenuItem("Favicon - Image", "/img/favicon.ico"))
         menu.addItem(dropdown)
@@ -3053,6 +3134,22 @@ class Bicchiere(BicchiereMiddleware):
         menu.addItem(dropdown)
         menu.addItem(MenuItem("About", "/about"))
 
+        @app.get("/cgi")
+        def cgi():
+            retval =  """
+            <hr>
+            <div style="padding-left: 2em;">
+            """
+            for f in os.listdir("cgi-bin"):
+                retval += f'<p><a href="/cgi-bin/{f}">{f}</a></p>'
+            retval += "</div><hr><p><a href=\"/\" style=\"text-decoration: none; color:steelblue;\">Home</a></p>"
+            heading = f"CGI Tests"
+            info = Bicchiere.get_demo_content().format(heading=heading, contents=retval)
+            return Bicchiere.render_template(demo_page_template,
+                                             page_title="Demo Bicchiere App - Hello Page",
+                                             menu_content=str(menu),
+                                             main_contents=info)
+        
         @app.get("/echo/wstest")
         @app.websocket_handler
         async def wstest():
@@ -3357,7 +3454,6 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
 
             heading = "Upload Example"
             info = Bicchiere.get_demo_content().format(heading=heading, contents=pinfo)
-#            return "{}{}{}".format(prefix, info, suffix)
             return Bicchiere.render_template(demo_page_template,
                                              page_title="Demo Bicchiere App - Upload example",
                                              menu_content=str(menu),
@@ -3369,7 +3465,6 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
         def hello(who=app.name):
             if who == app.name and 'who' in app.args and len(app.args.get('who', '')):
                 who = app.args.get('who')
-            #heading = f"Benvenuto, {Bicchiere.group_capitalize(who)}!!!"
             heading = f"Benvenuto, {who.title()}!!!"
             info = Bicchiere.get_demo_content().format(heading=heading, contents="")
             return Bicchiere.render_template(demo_page_template,
@@ -3855,6 +3950,11 @@ class AsyncBicchiere(Bicchiere):
         status_msg = None
 
         status_msg, response = self._try_static()
+        if status_msg and response:
+            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            return self._send_response(status_msg, response)
+
+        status_msg, response = self._try_cgi()
         if status_msg and response:
             self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
             return self._send_response(status_msg, response)
