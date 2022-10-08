@@ -257,7 +257,7 @@ class SuperDict(dict):
             super().__delitem__(key)
 
     def __repr__(self) -> str:
-        return json.dumps(self)
+        return json.dumps(self, default=lambda x: repr(x))
 
     def pop(self, __name: str):
         value = super().get(__name)
@@ -1550,7 +1550,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 5, 2)
+    __version__ = (1, 5, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
