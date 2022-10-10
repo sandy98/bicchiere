@@ -21,20 +21,21 @@ import urllib.request
 import wsgiref.util
 import zlib
 
+from tempfile import TemporaryFile
 #from email import charset
 from argparse import ArgumentTypeError
 from io import StringIO, BytesIO
-from subprocess import Popen, PIPE
-from datetime import datetime #, timedelta
+from subprocess import Popen, PIPE, STDOUT, run as runsub
+from datetime import datetime  # , timedelta
 from time import time as timestamp, sleep
 import time as o_time
 from functools import reduce, wraps, partial
-from http.cookies import SimpleCookie #, Morsel
+from http.cookies import SimpleCookie  # , Morsel
 from socketserver import ThreadingMixIn
 import socket
-from socket import error as socket_error #, socket as Socket
+from socket import error as socket_error  # , socket as Socket
 from wsgiref.headers import Headers
-from wsgiref.simple_server import make_server, ServerHandler, WSGIRequestHandler, WSGIServer 
+from wsgiref.simple_server import make_server, ServerHandler, WSGIRequestHandler, WSGIServer
 from wsgiref.simple_server import demo_app as simple_demo_app
 from uuid import uuid4
 from urllib.parse import parse_qsl
@@ -49,7 +50,7 @@ logging.basicConfig()
 
 # End of logging part
 
-### Part I - The sync world
+# Part I - The sync world
 
 # Websocket auxiliary classes and stuff
 
@@ -369,12 +370,16 @@ class WebSocket:
         self.read = read
         self.handler = handler
         self.do_compress = do_compress
-        self.origin = self.environ.get("HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
-        self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL", "").split(",")))
-        self.version = int(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
+        self.origin = self.environ.get(
+            "HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
+        self.protocols = list(map(str.strip, self.environ.get(
+            "HTTP_SEC_WEBSOCKET_PROTOCOL", "").split(",")))
+        self.version = int(self.environ.get(
+            "HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
         self.path = self.environ.get("PATH_INFO", "/")
         if do_compress:
-            self.compressor = zlib.compressobj(7, zlib.DEFLATED, -zlib.MAX_WBITS)
+            self.compressor = zlib.compressobj(
+                7, zlib.DEFLATED, -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
 
         self.default_handler = self.logger.info
@@ -483,29 +488,34 @@ class WebSocket:
 
             if f_opcode > 0x07:
                 if not fin:
-                    raise ProtocolError("Received fragmented control frame: {0!r}".format(data))
+                    raise ProtocolError(
+                        "Received fragmented control frame: {0!r}".format(data))
                 # Control frames MUST have a payload length of 125 bytes or less
                 if length > 125:
-                    raise FrameTooLargeException("Control frame cannot be larger than 125 bytes: {0!r}".format(data))
+                    raise FrameTooLargeException(
+                        "Control frame cannot be larger than 125 bytes: {0!r}".format(data))
 
             if length == 126:
                 # 16 bit length
                 data = self.read(2)
                 if len(data) != 2:
-                    raise WebSocketError("Unexpected EOF while decoding header")
+                    raise WebSocketError(
+                        "Unexpected EOF while decoding header")
                 length = struct.unpack("!H", data)[0]
 
             elif length == 127:
                 # 64 bit length
                 data = self.read(8)
                 if len(data) != 8:
-                    raise WebSocketError("Unexpected EOF while decoding header")
+                    raise WebSocketError(
+                        "Unexpected EOF while decoding header")
                 length = struct.unpack("!Q", data)[0]
 
             if has_mask:
                 mask = self.read(4)
                 if len(mask) != 4:
-                    raise WebSocketError("Unexpected EOF while decoding header")
+                    raise WebSocketError(
+                        "Unexpected EOF while decoding header")
 
             if self.do_compress and (flags & self.RSV0_MASK):
                 flags &= ~self.RSV0_MASK
@@ -531,7 +541,8 @@ class WebSocket:
                     raise WebSocketError("Could not read payload")
 
                 if len(payload) != length:
-                    raise WebSocketError("Unexpected EOF reading frame payload")
+                    raise WebSocketError(
+                        "Unexpected EOF reading frame payload")
 
                 if has_mask:
                     payload = self.mask_payload(mask, length, payload)
@@ -698,7 +709,6 @@ class WebSocket:
 
         except socket_error as e:
             raise WebSocketError(self.MSG_SOCKET_DEAD + " : " + str(e))
-
 
     def send(self, message, binary=None, do_compress=True):
         """
@@ -1550,20 +1560,20 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 5, 3)
+    __version__ = (1, 6, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
     known_wsgi_servers = ['bicchiereserver', 'gunicorn', 'whypercorn',
                           'bjoern', 'wsgiref', 'waitress', 'uwsgi', 'gevent']
     known_asgi_servers = ['uvicorn', 'hypercorn', 'daphne']
-    bevande = ["Campari", "Negroni", "Vermut", "Bitter", "Birra"]  # Ma dai! Cos'e questo?
+    bevande = ["Campari", "Negroni", "Vermut",
+               "Bitter", "Birra"]  # Ma dai! Cos'e questo?
 
     @property
     def version(self):
         major, minor, release = self.__version__
         return f"{major}.{minor}.{release}"
-
 
     def set_cookie(self, key, value, **attrs):
         self.headers.add_header('Set-Cookie', f'{key}={value}', **attrs)
@@ -1579,12 +1589,12 @@ class BicchiereMiddleware:
         self._start_response = self.no_response
         return [status_line.encode("utf-8")]
 
-
     # Template related stuff
 
     @staticmethod
     def get_template_dir():
-        templates_root = BicchiereMiddleware.config.get('templates_directory', 'templates')
+        templates_root = BicchiereMiddleware.config.get(
+            'templates_directory', 'templates')
         return os.path.join(os.getcwd(), templates_root)
 
     @staticmethod
@@ -1611,7 +1621,8 @@ class BicchiereMiddleware:
                     fp = open(fullpath)
                     new_tpl_str = fp.read()
                     fp.close()
-                    replace_line = BicchiereMiddleware.preprocess_template(new_tpl_str)
+                    replace_line = BicchiereMiddleware.preprocess_template(
+                        new_tpl_str)
                     lines[index] = replace_line
                 else:
                     raise TemplateSyntaxError(
@@ -1629,8 +1640,8 @@ class BicchiereMiddleware:
                 fp = open(fullpath)
                 tpl_str = fp.read()
                 fp.close()
-        return TemplateLight(BicchiereMiddleware.preprocess_template(tpl_str), 
-        **BicchiereMiddleware.template_filters)
+        return TemplateLight(BicchiereMiddleware.preprocess_template(tpl_str),
+                             **BicchiereMiddleware.template_filters)
 
     @staticmethod
     def render_template(tpl_str=TemplateLight.test_tpl, **kw):
@@ -1656,23 +1667,24 @@ class BicchiereMiddleware:
     @staticmethod
     def func_args(callablee):
         if not callable(callablee):
-            raise ValueError("A callable must be provided in order to get the signature.")
-        firma = inspect.signature(callablee)    
+            raise ValueError(
+                "A callable must be provided in order to get the signature.")
+        firma = inspect.signature(callablee)
         return list(map(lambda t: t[0], firma.parameters.items()))
 
     @staticmethod
     def is_asgi(callablee):
         args = BicchiereMiddleware.func_args(callablee)
-        if len(args) < 3: 
+        if len(args) < 3:
             return False
-        return args[0].lower() in ["context", "scope"] and args[1].lower() == "receive" and args[2].lower() == "send"  
+        return args[0].lower() in ["context", "scope"] and args[1].lower() == "receive" and args[2].lower() == "send"
 
     @staticmethod
     def is_wsgi(callablee):
         args = BicchiereMiddleware.func_args(callablee)
-        if len(args) < 2: 
+        if len(args) < 2:
             return False
-        return args[0].lower() == "environ" and args[1].lower() == "start_response"  
+        return args[0].lower() == "environ" and args[1].lower() == "start_response"
 
     @staticmethod
     def seconds():
@@ -1842,12 +1854,14 @@ class BicchiereMiddleware:
                 self.cookies = SimpleCookie(
                     self.environ[h].strip().replace(' ', ''))
                 for h in self.cookies:
-                    self.debug(f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
+                    self.debug(
+                        f"Cookie {self.cookies.get(h).key} = {self.cookies.get(h).value}")
         self.environ['bicchiere_cookies'] = str(self.cookies).strip()
 
     def _test_environ(self):
         if self.environ is None:
-            self.start_response("500 Malformed environment dict",[('Content-Type', "text/html; charset=utf-8")])
+            self.start_response("500 Malformed environment dict", [
+                                ('Content-Type', "text/html; charset=utf-8")])
             return False
         else:
             return True
@@ -1875,11 +1889,24 @@ class BicchiereMiddleware:
 
     def _init_args(self):
         self.args = self.qs2dict(self.environ.get('QUERY_STRING', ''))
-        #if self.environ.get('REQUEST_METHOD', 'GET') != 'GET':
-        self.form = cgi.FieldStorage(fp=self.environ.get('wsgi.input'), 
-        environ=self.environ, keep_blank_values=1)
-        #else:
-        #    self.form = {}
+
+    def _init_form(self):
+        self.input = self.environ.get('wsgi.input')
+        #self.dupinput = self.input.dup()
+        # self.logger.info("----wsgi.input---")
+        # self.logger.info(f"wsgi.input is class: {self.input.__class__.__name__}")
+        # self.logger.info(repr(dir(self.input)))
+        # self.logger.info("----wsgi.input---")
+        self.logger.info(f"wsgi.input status: {self.input.closed}")
+        #self.logger.info(f"wsgi.input contents: {self.input.getvalue()}")
+        self.form = cgi.FieldStorage(fp=self.input, environ=self.environ, keep_blank_values=1)
+        # self.logger.info("----FORM---")
+        # self.logger.info(f"HTTP form is class: {self.form.__class__.__name__}")
+        # self.logger.info(repr(dir(self.form)))
+        # self.logger.info("----FORM---")
+
+        # else:
+        #     self.form = {}
 
     def _try_mounted(self):
         old_env = None
@@ -1909,8 +1936,8 @@ class BicchiereMiddleware:
             self.environ = old_env
         self.environ['PATH_INFO'] = f"{self.path_prefix}{self.environ.get('PATH_INFO')}"
         if not response:
-            return self._abort(404, self.environ.get('path_info'.upper()), 
-            " not found.")
+            return self._abort(404, self.environ.get('path_info'.upper()),
+                               " not found.")
 
     def _try_routes(self):
         route = None
@@ -1927,18 +1954,18 @@ class BicchiereMiddleware:
                     return status_msg, response
                 else:
                     return self._abort(405, self.environ['REQUEST_METHOD'],
-                    f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
+                                       f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
             else:
                 return self._abort(404, self.environ.get('path_info'.upper()), " not found.")
         except Exception as exc:
             return self._abort(500, self.environ['PATH_INFO'],
-                f'raised an error: {str(exc)}')
-            
+                               f'raised an error: {str(exc)}')
 
     def _try_default(self):
         if len(self.routes) == 0 and len(self.mounted_apps) == 0:
             if self.environ['path_info'.upper()] != '/':
-                status_msg, response = self._abort(404, self.environ['path_info'.upper()], " not found.")
+                status_msg, response = self._abort(
+                    404, self.environ['path_info'.upper()], " not found.")
             else:
                 status_msg = Bicchiere.get_status_line(200)
                 response = self.default_handler()
@@ -1946,20 +1973,74 @@ class BicchiereMiddleware:
         return None, None
 
     @staticmethod
-    def _run_cgi(resource, form = None):
-        is_status_line = lambda line: len(line.split()) == 3 and \
-            line.split()[1].isdigit() and 90 < int(line.split()[1])  < 1000
-        is_header_line = lambda line: len(line.split(b":")) == 2
+    def _make_cgi_env(env):
+        # Allowed CGI environmental variables
+        cgi_vars = """
+        SERVER_SOFTWARE
+        SERVER_NAME
+        GATEWAY_INTERFACE
+        SERVER_PROTOCOL
+        SERVER_PORT
+        REQUEST_METHOD
+        PATH_INFO
+        PATH_TRANSLATED
+        SCRIPT_NAME
+        QUERY_STRING
+        REMOTE_HOST
+        REMOTE_ADDR
+        AUTH_TYPE
+        REMOTE_USER
+        REMOTE_IDENT
+        CONTENT_TYPE
+        CONTENT_LENGTH
+        """.split('\n')
+        
+        cgi_vars = list(filter(lambda x: len(x), map(lambda x: x.strip(), cgi_vars)))
+        d = {}
+        for k in cgi_vars:
+            d[k] = ''
+
+        os.system("clear")
+        for k, v in env.items():
+            if k in cgi_vars or k.startswith("HTTP_"):
+                d[k] = v
+        logger.info(f"CGI ENV: {repr(d)}")
+        return d
+
+    @staticmethod
+    def _run_cgi(resource, env=os.environ):
+        def is_status_line(line): return len(line.split()) == 3 and \
+            line.split()[1].isdigit() and 90 < int(line.split()[1]) < 1000
+
+        def is_header_line(line): 
+            return len(line.split(b":")) == 2 and not b"<" in line
+
+        input_stream = env.get("wsgi.input")
         status_line = b""
         response = b""
         headers = Headers()
-        process = Popen(resource.split(), stdout=PIPE, stdin=form or os.sys.stdin)
-        (output, err) = process.communicate()
-        exit_code = process.wait()
-        if exit_code:
-            return None, None, None
-        if err:
-            output += b"\r\n\r\nstderr:\r\n" + err
+        parg = resource.split()
+
+        tf = TemporaryFile()
+        tf.write(env.get("QUERY_STRING", '').encode())
+
+        content_length = env.get('CONTENT_LENGTH', '')
+        content_length = int(content_length) if len(content_length) else 0
+        if content_length > 0 and tf.tell() > 0:
+            tf.write(b"&")
+        iter_stream = wsgiref.util.FileWrapper(input_stream, blksize=content_length)
+        counter = 0
+        if content_length > counter:
+            for chunk in iter_stream:
+                counter += content_length
+                tf.write(chunk)
+                if counter == content_length:
+                    tf.write(b"")
+                    break
+        tf.seek(0)
+        process = runsub(parg, stdin=tf, stdout=PIPE, stderr=STDOUT, 
+            env=BicchiereMiddleware._make_cgi_env(env))
+        output = process.stdout
         fp = BytesIO(output.replace(b"\r\n\r\n", b"\r\n \r\n"))
         lines = iter(map(lambda l: l.strip(), fp.readlines()))
         for line in lines:
@@ -1985,18 +2066,21 @@ class BicchiereMiddleware:
         if not headers.get("Content-Type"):
             logger.debug("Manually adding 'Content-Type' header")
             if BicchiereMiddleware.is_html(response):
-                headers.add_header('Content-Type', 'text/html', charset="utf-8")
+                headers.add_header(
+                    'Content-Type', 'text/html', charset="utf-8")
             else:
-                headers.add_header('Content-Type', 'text/plain', charset="utf-8")
+                headers.add_header(
+                    'Content-Type', 'text/plain', charset="utf-8")
 
         if not len(status_line):
             logger.debug("Manually adding status line")
             status_line = b"200 OK"
 
-        logger.info(f"Returning with values:\nstatus_line: {repr(status_line)}\nresponse: {repr(response)}\nheaders: {repr(headers)}\n")
-        return (status_line.decode() if status_line else "500 No status line", 
-        response.decode() if response else "", 
-        headers)
+        logger.info(
+            f"Returning with values:\nstatus_line: {repr(status_line)}\nresponse: {repr(response)}\nheaders: {repr(headers)}\n")
+        return (Bicchiere.tobytes(status_line).decode() if status_line else "500 No status line",
+                response.decode() if response else "",
+                headers)
 
     def _try_cgi(self):
         curr_path = self.environ.get('PATH_INFO')
@@ -2015,12 +2099,13 @@ class BicchiereMiddleware:
                         resource = f"ruby {resource}"
                     else:
                         resource = None
-                    if resource:    
-                         status_line, response, headers = self._run_cgi(resource, self.form)
-                         if status_line and response and headers:
+                    if resource:
+                        env = self.environ.copy()
+                        status_line, response, headers = self._run_cgi(resource, env)
+                        if status_line and response and headers:
                             for k, v in headers.items():
                                 self.headers.add_header(k, v)
-                         return status_line, response
+                        return status_line, response
                     else:
                         return self._abort(500, curr_path, " cannot be executed.")
                 else:
@@ -2028,7 +2113,7 @@ class BicchiereMiddleware:
             else:
                 return self._abort(404, curr_path, " resource not found in this server.")
         else:
-            return None, None    
+            return None, None
 
     def _try_static(self):
         if self.environ.get('path_info'.upper()).startswith(self.static_path):
@@ -2036,7 +2121,8 @@ class BicchiereMiddleware:
             self.debug("Searching for resource '{}'".format(resource))
             if os.path.exists(resource):
                 if os.path.isfile(resource):
-                    mime_type, _ = guess_type(resource) or ('text/plain', 'utf-8')
+                    mime_type, _ = guess_type(
+                        resource) or ('text/plain', 'utf-8')
                     fp = open(resource, 'rb')
                     response = [b'']
                     r = fp.read(1024)
@@ -2045,18 +2131,24 @@ class BicchiereMiddleware:
                         r = fp.read(1024)
                     fp.close()
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', mime_type, charset='utf-8')
+                    self.headers.add_header(
+                        'Content-Type', mime_type, charset='utf-8')
                     status_msg = Bicchiere.get_status_line(200)
                 elif os.path.isdir(resource):
                     del self.headers['Content-Type']
-                    self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+                    self.headers.add_header(
+                        'Content-Type', 'text/html', charset='utf-8')
                     if Bicchiere.config.get('allow_directory_listing', False) or Bicchiere.config.get('debug', False):
                         status_msg = Bicchiere.get_status_line(200)
-                        response = [b'<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
-                        response.append(f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>'.encode())
-                        left, right = os.path.split(self.environ.get('path_info'.upper()))
+                        response = [
+                            b'<p style="margin-top: 15px;"><strong>Directory listing for&nbsp;</strong>']
+                        response.append(
+                            f'<strong style="color: steelblue;">{self.environ.get("path_info".upper())}</strong><p><hr/>'.encode())
+                        left, right = os.path.split(
+                            self.environ.get('path_info'.upper()))
                         if left != "/":
-                            response.append(f'<p title="Parent directory"><a href="{left}">..</a></p>'.encode())
+                            response.append(
+                                f'<p title="Parent directory"><a href="{left}">..</a></p>'.encode())
                         l = os.listdir(resource)
                         l.sort()
                         for f in l:
@@ -2064,28 +2156,30 @@ class BicchiereMiddleware:
                             if os.path.isfile(fullpath) or os.path.isdir(fullpath):
                                 href = os.path.join(
                                     self.environ.get('path_info'.upper()), f)
-                                response.append(f'<p><a href="{href}">{f}</a></p>'.encode())
+                                response.append(
+                                    f'<p><a href="{href}">{f}</a></p>'.encode())
                     else:
-                        status_msg, response = self._abort(403, self.environ.get('path_info'.upper()), 
-                        'Directory listing forbidden')
+                        status_msg, response = self._abort(403, self.environ.get('path_info'.upper()),
+                                                           'Directory listing forbidden')
                 else:
-                    status_msg, response = self._abort(400, self.get_status_code(400).get('status_msg'), 
-                    'Bad request, file type cannot be handled.')
+                    status_msg, response = self._abort(400, self.get_status_code(400).get('status_msg'),
+                                                       'Bad request, file type cannot be handled.')
             else:
-                status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), 
-                    " not found.")
+                status_msg, response = self._abort(404, self.environ.get('path_info'.upper()),
+                                                   " not found.")
             return status_msg, response
         else:
             return None, None
-
 
     def _send_response(self, status_msg, response):
 
         if not self.headers_sent and 'content-type' not in self.headers:
             if response and self.is_html(response):
-                self.headers.add_header('Content-Type', 'text/html', charset='utf-8')
+                self.headers.add_header(
+                    'Content-Type', 'text/html', charset='utf-8')
             else:
-                self.headers.add_header('Content-Type', 'text/plain', charset='utf-8')
+                self.headers.add_header(
+                    'Content-Type', 'text/plain', charset='utf-8')
 
         if response and self.config.debug:
             r = self.tobytes(response)
@@ -2097,13 +2191,14 @@ class BicchiereMiddleware:
             for msg in dbg_msg_l:
                 if len(msg) > len(dbg_msg):
                     dbg_msg = msg
-            self.debug(f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
+            self.debug(
+                f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
 
         self.start_response(status_msg, self.headers.items())
         retval = b""
         for i in range(len(response)):
             retval += self.tobytes(response[i])
-        #self.clear_headers()
+        # self.clear_headers()
         return [retval]
 
     def init_local_data(self):
@@ -2112,7 +2207,8 @@ class BicchiereMiddleware:
         self._local_data = threading.local()
 
         self._local_data.__dict__.setdefault('environ', None)
-        self._local_data.__dict__.setdefault('_start_response', self.no_response)
+        self._local_data.__dict__.setdefault(
+            '_start_response', self.no_response)
         self._local_data.__dict__.setdefault('headers', Headers())
         self._local_data.__dict__.setdefault('session', None)
         self._local_data.__dict__.setdefault('cookies', SimpleCookie())
@@ -2142,25 +2238,30 @@ class BicchiereMiddleware:
             if not connection or not "Upgrade" in connection:
                 self.debug(
                     f'Error with HTTP_CONNECTION header: {repr(self.environ.get("HTTP_CONNECTION"))}')
-                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"), 
-                "Not a websocket request")
-                self.start_response(status_msg, [('Content-Type', 'text/html; charset=utf-8')])
+                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"),
+                                                   "Not a websocket request")
+                self.start_response(
+                    status_msg, [('Content-Type', 'text/html; charset=utf-8')])
                 return response
             upgrade = self.environ.get("HTTP_UPGRADE")
             if not upgrade or upgrade != "websocket":
-                self.debug(f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
-                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"), 
-                "Not a websocket request")
-                self.start_response(status_msg, [('Content-Type', 'text/html; charset=utf-8')])
+                self.debug(
+                    f'Error with HTTP_UPGRADE header: {repr(self.environ.get("HTTP_UPGRADE"))}')
+                status_msg, response = self._abort(400, self.environ.get("PATH_INFO"),
+                                                   "Not a websocket request")
+                self.start_response(
+                    status_msg, [('Content-Type', 'text/html; charset=utf-8')])
                 return response
             wsversion = self.environ.get("HTTP_SEC_WEBSOCKET_VERSION")
             if not wsversion or wsversion not in known_versions:
                 self.debug(
                     f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION"))}')
-                raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
+                raise WebSocketError(
+                    f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
             wskey = self.environ.get("HTTP_SEC_WEBSOCKET_KEY")
             if not wskey:
-                self.debug( f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_KEY"))}')
+                self.debug(
+                    f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(self.environ.get("HTTP_SEC_WEBSOCKET_KEY"))}')
                 raise WebSocketError("Non existent websocket key.")
             key_len = len(base64.b64decode(wskey))
             if key_len != 16:
@@ -2192,7 +2293,8 @@ class BicchiereMiddleware:
                 (k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
             self.debug(f"Response headers for websocket:\n{final_headers}")
 
-            self.writer = self.start_response("101 Switching protocols", final_headers)
+            self.writer = self.start_response(
+                "101 Switching protocols", final_headers)
             self.writer(b"")
             self.headers_sent = True
             self._start_response = lambda *args, **kw: None
@@ -2437,7 +2539,7 @@ class BicchiereMiddleware:
 
 ####
 
-    def _abort(self, code = 404, primary_message = "Not found", secondary_message = '', procceed = False):
+    def _abort(self, code=404, primary_message="Not found", secondary_message='', procceed=False):
         del self.headers['Content-Type']
         self.headers.add_header('Content-Type', 'text/html', charset="utf-8")
         status_msg = BicchiereMiddleware.get_status_line(code)
@@ -2453,12 +2555,12 @@ class BicchiereMiddleware:
             return response
         return status_msg, response
 
+    logger = logger
 
-
-    def __init__(self, application=None, name = None):
+    def __init__(self, application=None, name=None):
         self.application = application
         self.name = name or self.__class__.__name__
-        self.logger = logger
+        #self.logger = logger
         self.path_prefix = ""
         self.mounted_apps = dict()
         self.static_root = Bicchiere.config.get('static_directory', 'static')
@@ -2476,7 +2578,8 @@ class BicchiereMiddleware:
         if self.application:
             return self.application(self.environ.copy(), self.start_response)
         else:
-            start_response("200 OK", [('Content-Type', 'text/html; charset=utf-8')])
+            start_response(
+                "200 OK", [('Content-Type', 'text/html; charset=utf-8')])
             return [b"", str(self).encode("utf-8")]
 
     def mount(self, mount_point: str, app) -> None:
@@ -2553,7 +2656,6 @@ class Bicchiere(BicchiereMiddleware):
 
         # First, things that don't vary through calls
         self.name = name if name else f"{self.__class__.__name__} - {random.choice(Bicchiere.bevande)}"
-        #self.logger = logger
         self.session_class = Bicchiere.config['session_class']
         if not self.session_class.secret:
             self.session_class.secret = uuid4().hex
@@ -2572,7 +2674,7 @@ class Bicchiere(BicchiereMiddleware):
     def __call__(self, environ, start_response):
         # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
         self.init_local_data()
-               
+
         self.environ = environ
         self._start_response = start_response
 
@@ -2589,32 +2691,37 @@ class Bicchiere(BicchiereMiddleware):
 
         status_msg, response = self._try_static()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_static with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_cgi()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_cgi with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_cgi with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_default()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_default with status: {status_msg}")
             return self._send_response(status_msg, response)
 
+        self._init_form()
         status_msg, response = self._try_routes()
         if status_msg and response and re.match(r"^[25]", status_msg):
-            self.logger.info(f"Proceeding from _try_routes with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_routes with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_mounted()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_mounted with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_mounted with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         return self._send_response(self._abort(404, self.environ['PATH_INFO'],
-        " not found AT ALL."))
-
+                                               " not found AT ALL."))
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
@@ -3149,20 +3256,35 @@ class Bicchiere(BicchiereMiddleware):
 
         @app.get("/cgi")
         def cgi():
-            retval =  """
+            retval = """
             <hr>
-            <div style="padding-left: 2em;">
+            <div style="display: flex; flex-direction: row:">
+            <div style="width: 50%; min-width: 50%; padding-left: 2em;">
             """
             for f in os.listdir("cgi-bin"):
                 retval += f'<p><a href="/cgi-bin/{f}">{f}</a></p>'
-            retval += "</div><hr><p><a href=\"/\" style=\"text-decoration: none; color:steelblue;\">Home</a></p>"
+            retval += '</div><div style="width: 25%; min-width: 25%; padding-left: 2em;">'
+            retval += """
+                    <h2 style="text-align: center;">CGI Form</h2>
+                    <form action="/cgi-bin/cgiform.py", method="POST">
+                        <p style="text-align: right;"><label>Name  </label><input type="text" name="username" required /></p>
+                        <p style="text-align: right;"><label>Password  </label><input type="password" name="passwd" required /></p>
+                        <p style="text-align: right"><input type="reset" value="Reset" />&nbsp;&nbsp;<input type="submit" value="Submit to /cgi-bin/cgiform.py" /></p>
+                    </form>
+                    </div>
+                </div>
+                <hr>
+                <p style="text-align: center;">
+                  <a href=\"/\" style=\"text-decoration: none; color:steelblue;\">Home</a>
+                </p>
+                """
             heading = f"CGI Tests"
             info = Bicchiere.get_demo_content().format(heading=heading, contents=retval)
             return Bicchiere.render_template(demo_page_template,
                                              page_title="Demo Bicchiere App - Hello Page",
                                              menu_content=str(menu),
                                              main_contents=info)
-        
+
         @app.get("/echo/wstest")
         @app.websocket_handler
         async def wstest():
@@ -3186,7 +3308,8 @@ class Bicchiere(BicchiereMiddleware):
                 current_millis = Bicchiere.millis()
                 prev_millis = int(evt.data)
                 roundtrip = current_millis - prev_millis
-                logger.info(f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
+                logger.info(
+                    f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
             wsock.onpong += pong_handler
 
             def message_handler(evt):
@@ -3199,12 +3322,13 @@ class Bicchiere(BicchiereMiddleware):
                         msg = f"\tECHO at ({sdate}):\t{repr(data)}"
                         app.logger.info(msg)
                         wsock.send(msg)
-                        #sleep(2)
+                        # sleep(2)
             wsock.onmessage += message_handler
 
             try:
                 wsock.send("Ciao, straniero!")
-                hbt = threading.Thread(target=do_hb, name="h_b_thread", args=())
+                hbt = threading.Thread(
+                    target=do_hb, name="h_b_thread", args=())
                 hbt.setDaemon(True)
                 hbt.start()
             except WebSocketError as wserr:
@@ -3225,17 +3349,16 @@ class Bicchiere(BicchiereMiddleware):
 
             return b''
 
-
         @app.get("/")
         def home():
-            #randomcolor = random.choice(
+            # randomcolor = random.choice(
             #    ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
             heading = "WSGI, Bicchiere Flavor"
             #url = "https://pypi.org/project/bicchiere/"
             #inner_contents = urllib.request.urlopen(url).read().decode()
             # contents = """
             # <iframe
-            #   style="scroll = auto; height: 30em; min-height: 30em; width: 100%; min-width: 100%; border: none; background: white;" 
+            #   style="scroll = auto; height: 30em; min-height: 30em; width: 100%; min-width: 100%; border: none; background: white;"
             #   src="https://pypi.org/project/bicchiere/"
             # />
             # """
@@ -3324,7 +3447,8 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
         @app.get('/echo')
         # @app.html_content()
         def echo():
-            randomcolor = random.choice(['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
+            randomcolor = random.choice(
+                ['red', 'blue', 'green', 'green', 'green', 'steelblue', 'navy', 'brown', '#990000'])
             heading = "Bicchiere WebSocket Test - Simple Echo Server"
             onkeyup = """
                txt_chat.addEventListener("keyup", function(ev) {
@@ -3707,16 +3831,19 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
     def run(self, host="localhost", port=8086, app=None, server_name=None, **options):
         app = app or self
         #server_name = server_name or 'wsgiref'
-        server_name = server_name or ('hypercorn' if self.is_asgi(app) else 'bicchiereserver')
+        server_name = server_name or (
+            'hypercorn' if self.is_asgi(app) else 'bicchiereserver')
         orig_server_name = server_name
         server_name = server_name.lower()
-        known_servers = self.known_asgi_servers if self.is_asgi(app) else self.known_wsgi_servers
+        known_servers = self.known_asgi_servers if self.is_asgi(
+            app) else self.known_wsgi_servers
 
         if server_name not in known_servers:
             self.debug(
                 f"Server '{orig_server_name}' not known as of now. Switching to built-in BicchiereServer")
             #server_name = 'wsgiref'
-            server_name = 'hypercorn' if Bicchiere.is_asgi(app) else 'bicchiereserver'
+            server_name = 'hypercorn' if Bicchiere.is_asgi(
+                app) else 'bicchiereserver'
 
         server = None
         server_action = None
@@ -3728,25 +3855,31 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                 config = Config()
                 config.bind = [f"{host}:{port}"]
                 from hypercorn.asyncio import serve
-                def server_action(): 
+
+                def server_action():
                     return asyncio.run(serve(app, config))
             except ImportError:
-                print("Module 'hypercorn' not installed.\nRun 'python -m pip install hypercorn' prior to using this server.")
+                print(
+                    "Module 'hypercorn' not installed.\nRun 'python -m pip install hypercorn' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Waitress: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Waitress: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'uvicorn':
             try:
                 import uvicorn
-                def server_action(): 
+
+                def server_action():
                     return uvicorn.run(app, host=f"{host}", port=port)
             except ImportError:
-                print("Module 'uvicorn' not installed.\nRun 'python -m pip install uvicorn' prior to using this server.")
+                print(
+                    "Module 'uvicorn' not installed.\nRun 'python -m pip install uvicorn' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Uvicorn: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Uvicorn: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'daphne':
@@ -3757,38 +3890,47 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                 #app_asgi = build_asgi_i(application)
                 #app_daphne = daphne.cli.ASGI3Middleware(application)
                 dserver = daphne.server.Server(
-                    app, endpoints = ["tcp:port=%d:interface=%s" % (port, host)])
+                    app, endpoints=["tcp:port=%d:interface=%s" % (port, host)])
+
                 def server_action():
                     return dserver.run()
             except ImportError:
-                print("Module 'daphne' not installed.\nRun 'python -m pip install daphne' prior to using this server.")
+                print(
+                    "Module 'daphne' not installed.\nRun 'python -m pip install daphne' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Daphne: {repr(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Daphne: {repr(exc)}")
                 os.sys.exit()
 
         if server_name == 'waitress':
             try:
                 import waitress as server
-                def server_action(): 
+
+                def server_action():
                     return server.serve(app, listen=f"{host}:{port}")
             except ImportError:
-                print("Module 'waitress' not installed.\nRun 'python -m pip install waitress' prior to using this server.")
+                print(
+                    "Module 'waitress' not installed.\nRun 'python -m pip install waitress' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Waitress: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Waitress: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'bjoern':
             try:
                 import bjoern as server
-                def server_action(): 
+
+                def server_action():
                     return server.run(app, host, port)
             except ImportError:
-                print("Module 'bjoern' not installed.\nRun 'python -m pip install bjoern' prior to using this server.")
+                print(
+                    "Module 'bjoern' not installed.\nRun 'python -m pip install bjoern' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Bjoern: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Bjoern: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'gevent':
@@ -3796,6 +3938,7 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                 from gevent.pywsgi import WSGIServer as GWSGIServer
                 #from geventwebsocket import WebSocketError as GWebSocketError, websocket as GWebSocket
                 #from geventwebsocket.handler import WebSocketHandler as GWebSocketHandler
+
                 def server_action():
                     #app.config.websocket_class = GWebSocket
                     app.config.websocket_class = WebSocket
@@ -3806,20 +3949,24 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                 print("Module 'gevent-websockets' not installed.\nRun 'python -m pip install gevent-websockets' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Bjoern: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Bjoern: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'uwsgi':
             try:
-                os.system(f"uwsgi --module=bicchiere:application --master --enable-threads --threads=9 --http={host}:{port} --processes=4")
+                os.system(
+                    f"uwsgi --module=bicchiere:application --master --enable-threads --threads=9 --http={host}:{port} --processes=4")
             except Exception as exc:
-                print(f"Exception ocurred while trying to start uWSGI: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start uWSGI: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'gunicorn':
             try:
                 import gunicorn.app.base
-                def server_action(): 
+
+                def server_action():
                     class StandaloneApplication(gunicorn.app.base.BaseApplication):
 
                         def __init__(self, app, options=None):
@@ -3829,24 +3976,26 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
 
                         def load_config(self):
                             config = {key: value for key, value in self.options.items()
-                                    if key in self.cfg.settings and value is not None}
+                                      if key in self.cfg.settings and value is not None}
                             for key, value in config.items():
                                 self.cfg.set(key.lower(), value)
 
                         def load(self):
-                            return self.application                    
+                            return self.application
 
-                    options = {'workers': 4, 'bind': f'{host}:{port}', 
-                    'handler_class': BicchiereHandler, 'server_class': BicchiereServer}
+                    options = {'workers': 4, 'bind': f'{host}:{port}',
+                               'handler_class': BicchiereHandler, 'server_class': BicchiereServer}
 
                     server = StandaloneApplication(app, options)
                     return server.run()
 
             except ImportError:
-                print("Module 'gunicorn' not installed.\nRun 'python -m pip install gunicorn' prior to using this server.")
+                print(
+                    "Module 'gunicorn' not installed.\nRun 'python -m pip install gunicorn' prior to using this server.")
                 os.sys.exit()
             except Exception as exc:
-                print(f"Exception ocurred while trying to start Gunicorn: {str(exc)}")
+                print(
+                    f"Exception ocurred while trying to start Gunicorn: {str(exc)}")
                 os.sys.exit()
 
         if server_name == 'wsgiref':
@@ -3909,17 +4058,18 @@ def demo_app():
 
 application = demo_app()  # Rende uWSGI felice :-)
 
+
 def run(host='localhost', port=8086, app=application, server_name='bicchiereserver'):
     "Shortcut to run demo app, or any WSGI/ASGI compliant app, for that matter"
     runner = application if server_name in Bicchiere.known_wsgi_servers else asgi_application
-    
+
     if Bicchiere.is_wsgi(app):
         if server_name in Bicchiere.known_wsgi_servers:
             pass
         else:
             print(f"You must choose a WSGI server to run a WSGI app.\nQuitting.\n")
             os.sys.exit()
-    
+
     if Bicchiere.is_asgi(app):
         if server_name in Bicchiere.known_asgi_servers:
             pass
@@ -3932,21 +4082,21 @@ def run(host='localhost', port=8086, app=application, server_name='bicchiereserv
 # End Miscelaneous exports
 
 
-### End of Part I - The sync world
+# End of Part I - The sync world
 
 #########################################################################################################
 
-### Part II - The async world
+# Part II - The async world
 
 # Async descendant of Bicchiere
 
 class AsyncBicchiere(Bicchiere):
     "ASGI version of Bicchiere"
-    
+
     async def __call__(self, context, receive, send):
         # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
         self.init_local_data()
-               
+
         self.environ = context
         self._start_response = self.no_response
 
@@ -3964,31 +4114,36 @@ class AsyncBicchiere(Bicchiere):
 
         status_msg, response = self._try_static()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_static with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_cgi()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_static with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_default()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_default with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_routes()
         if status_msg and response and re.match(r"^[235]", status_msg):
-            self.logger.info(f"Proceeding from _try_routes with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_routes with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         status_msg, response = self._try_mounted()
         if status_msg and response:
-            self.logger.info(f"Proceeding from _try_mount with status: {status_msg}")
+            self.logger.info(
+                f"Proceeding from _try_mount with status: {status_msg}")
             return self._send_response(status_msg, response)
 
         return self._send_response(self._abort(404, self.environ['PATH_INFO'],
-        " not found AT ALL."))
+                                               " not found AT ALL."))
 
         self.environ = context
         if len(self.routes) == 0:
@@ -4001,35 +4156,39 @@ class AsyncBicchiere(Bicchiere):
             else:
                 body = b"404 Not found"
 
-        start = dict(type = "http.response.start", status = 200, 
-        headers = [[b'content-type', b'text/html' if self.is_html(body) else b'text/plain']])
+        start = dict(type="http.response.start", status=200,
+                     headers=[[b'content-type', b'text/html' if self.is_html(body) else b'text/plain']])
 
-        contents = dict(type = 'http.response.body', body = body, more_body = False)
+        contents = dict(type='http.response.body', body=body, more_body=False)
 
         await send(start)
         await send(contents)
-    
+
     @classmethod
     def demo_app(cls):
-        app = cls(name = "Demo Async App")
+        app = cls(name="Demo Async App")
         app.counter = 0
+
         @app.get("/")
         async def home():
-            body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in app.environ.items()]
+            body = [f"{clave} =  {valor}\n".encode(
+                "utf-8") for clave, valor in app.environ.items()]
             body.insert(0, b'ASGI Variables\n______________\n\n')
             body.append(b'_' * 80)
             body.append(b"\n\n")
             app.counter += 1
-            body.append(f"This app was visited {app.counter} times.\n".encode("utf-8"))
+            body.append(
+                f"This app was visited {app.counter} times.\n".encode("utf-8"))
             return b"".join(body)
 
         return app
 
 # End AsyncBicchiere
 
+
 asgi_application = AsyncBicchiere.demo_app()
 
-### End of Part II - The async world
+# End of Part II - The async world
 
 
 # Provervial main function
@@ -4077,10 +4236,10 @@ def main():
         logger.error(f"ImportError: {repr(impErr)}.\nQuitting.\n\n")
         os.sys.exit()
     except Exception as exc:
-        logger.error(f"Exception ocurred while importing {napp} from {nmodule}: {repr(exc)}.\nQuitting.\n\n")
+        logger.error(
+            f"Exception ocurred while importing {napp} from {nmodule}: {repr(exc)}.\nQuitting.\n\n")
         os.sys.exit()
-    
-   
+
     if not userapp:
         print("\nA valid application wasn't provided.\nQuitting.\n")
         os.sys.exit()
