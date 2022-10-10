@@ -1897,7 +1897,10 @@ class BicchiereMiddleware:
         # self.logger.info(f"wsgi.input is class: {self.input.__class__.__name__}")
         # self.logger.info(repr(dir(self.input)))
         # self.logger.info("----wsgi.input---")
-        self.logger.info(f"wsgi.input status: {self.input.closed}")
+        if hasattr(self.input, "closed"):
+            self.logger.info(f"wsgi.input status: {self.input.closed}")
+        else:
+            self.logger.info(f"{self.input.__class__.__name__} has not a 'closed' attribute")
         #self.logger.info(f"wsgi.input contents: {self.input.getvalue()}")
         self.form = cgi.FieldStorage(fp=self.input, environ=self.environ, keep_blank_values=1)
         # self.logger.info("----FORM---")
