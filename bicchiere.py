@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os, sys
+from xml.dom import NotSupportedErr
+if sys.version_info < (3, 6):
+    raise NotSupportedErr("This software only runs within Python version 3.6 or higher.")
 
 import logging
 import inspect
 import struct
 import mimetypes
-import os
 import random
 import re
 import json
@@ -1560,7 +1563,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 6, 1)
+    __version__ = (1, 6, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1892,24 +1895,12 @@ class BicchiereMiddleware:
 
     def _init_form(self):
         self.input = self.environ.get('wsgi.input')
-        #self.dupinput = self.input.dup()
-        # self.logger.info("----wsgi.input---")
-        # self.logger.info(f"wsgi.input is class: {self.input.__class__.__name__}")
-        # self.logger.info(repr(dir(self.input)))
-        # self.logger.info("----wsgi.input---")
+
         if hasattr(self.input, "closed"):
             self.logger.info(f"wsgi.input status: {self.input.closed}")
         else:
             self.logger.info(f"{self.input.__class__.__name__} has not a 'closed' attribute")
-        #self.logger.info(f"wsgi.input contents: {self.input.getvalue()}")
         self.form = cgi.FieldStorage(fp=self.input, environ=self.environ, keep_blank_values=1)
-        # self.logger.info("----FORM---")
-        # self.logger.info(f"HTTP form is class: {self.form.__class__.__name__}")
-        # self.logger.info(repr(dir(self.form)))
-        # self.logger.info("----FORM---")
-
-        # else:
-        #     self.form = {}
 
     def _try_mounted(self):
         old_env = None
