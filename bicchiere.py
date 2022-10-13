@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from http.client import HTTPException
 import os, sys
 from xml.dom import NotSupportedErr
 if sys.version_info < (3, 6):
@@ -1592,6 +1593,69 @@ class BicchiereMiddleware:
         self._start_response = self.no_response
         return [status_line.encode("utf-8")]
 
+    @staticmethod
+    def scope2env(scope, body):
+        """
+        Builds a scope and request body into a WSGI environ object.
+        """
+        if not scope.get("method"):
+            return None
+
+        environ = {
+            "REQUEST_METHOD": scope["method"],
+            "SCRIPT_NAME": scope.get("root_path", "").encode("utf8").decode("latin1"),
+            "PATH_INFO": scope["path"].encode("utf8").decode("latin1"),
+            "QUERY_STRING": scope["query_string"].decode("ascii"),
+            "SERVER_PROTOCOL": "HTTP/%s" % scope["http_version"],
+            "wsgi.version": (1, 0),
+            "wsgi.url_scheme": scope.get("scheme", "http"),
+            "wsgi.input": body,
+            "wsgi.errors": BytesIO(),
+            "wsgi.multithread": True,
+            "wsgi.multiprocess": True,
+            "wsgi.run_once": False,
+        }
+        # Get server name and port - required in WSGI, not in ASGI
+        if "server" in scope:
+            environ["SERVER_NAME"] = scope["server"][0]
+            environ["SERVER_PORT"] = str(scope["server"][1])
+        else:
+            environ["SERVER_NAME"] = "localhost"
+            environ["SERVER_PORT"] = "80"
+
+        if "client" in scope:
+            environ["REMOTE_ADDR"] = scope["client"][0]
+
+        # Go through headers and make them into environ entries
+        for name, value in scope.get("headers", []):
+            name = name.decode("latin1")
+            if name == "content-length":
+                corrected_name = "CONTENT_LENGTH"
+            elif name == "content-type":
+                corrected_name = "CONTENT_TYPE"
+            else:
+                corrected_name = "HTTP_%s" % name.upper().replace("-", "_")
+            # HTTPbis say only ASCII chars are allowed in headers, but we latin1 just in case
+            value = value.decode("latin1")
+            if corrected_name in environ:
+                value = environ[corrected_name] + "," + value
+            environ[corrected_name] = value
+        return environ
+
+    # SCGI stuff
+
+    @staticmethod
+    def to_netstring(text):
+        pad2 = lambda t: t if len(t) > 1 else f"0{t}"
+        return f"<{' '.join(list(map(lambda c: pad2(hex(ord(c)).replace('0x', '')), list(text))))}>"
+
+    @staticmethod
+    def from_netstring(text):
+        return f"\"{''.join(list(map(lambda c: chr(int(c, 16)), text.replace('<', '').replace('>', '').split())))}\""
+
+    # End of SCGI stuff
+
+
     # Template related stuff
 
     @staticmethod
@@ -1863,8 +1927,6 @@ class BicchiereMiddleware:
 
     def _test_environ(self):
         if self.environ is None:
-            self.start_response("500 Malformed environment dict", [
-                                ('Content-Type', "text/html; charset=utf-8")])
             return False
         else:
             return True
@@ -1958,8 +2020,7 @@ class BicchiereMiddleware:
     def _try_default(self):
         if len(self.routes) == 0 and len(self.mounted_apps) == 0:
             if self.environ['path_info'.upper()] != '/':
-                status_msg, response = self._abort(
-                    404, self.environ['path_info'.upper()], " not found.")
+                status_msg, response = self._abort(404, self.environ['path_info'.upper()], " not found.")
             else:
                 status_msg = Bicchiere.get_status_line(200)
                 response = self.default_handler()
@@ -2185,8 +2246,7 @@ class BicchiereMiddleware:
             for msg in dbg_msg_l:
                 if len(msg) > len(dbg_msg):
                     dbg_msg = msg
-            self.debug(
-                f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
+            self.debug(f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
 
         self.start_response(status_msg, self.headers.items())
         retval = b""
@@ -2613,15 +2673,8 @@ class BicchiereMiddleware:
         if self.headers_sent:
             return self.write or None
 
-        #status = self.get_status_line(status)
-
         if isinstance(headers, (dict, Headers)):
             headers = list(headers.items())
-
-#        if self.code in self.bad_headers:
-#            bad_headers = self.bad_headers[self.code]
-#            headers = [h for h in headers if h[0] not in bad_headers]
-
         self.write = self._start_response(status, headers)
         self.headers_sent = True
         return self.write
@@ -3824,7 +3877,6 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
 
     def run(self, host="localhost", port=8086, app=None, server_name=None, **options):
         app = app or self
-        #server_name = server_name or 'wsgiref'
         server_name = server_name or (
             'hypercorn' if self.is_asgi(app) else 'bicchiereserver')
         orig_server_name = server_name
@@ -4006,7 +4058,7 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
 
         try:
             # server.serve_forever()
-            stype = "ASGI" if isinstance(app, AsyncBicchiere) else "WSGI"
+            stype = "ASGI" if Bicchiere.is_asgi(app) else "WSGI"
             print("\n\n", f"Running Bicchiere {stype} ({app.name}) version {Bicchiere.get_version()}",
                   f"using {(server_name or 'bicchiereserver').capitalize()}",
                   f"at {host}:{port if port else ''}")  # ,
@@ -4087,15 +4139,78 @@ def run(host='localhost', port=8086, app=application, server_name='bicchiereserv
 class AsyncBicchiere(Bicchiere):
     "ASGI version of Bicchiere"
 
-    async def __call__(self, context, receive, send):
-        # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
-        self.init_local_data()
+    @staticmethod
+    async def no_response(*args, **kwargs):
+        pass
 
-        self.environ = context
-        self._start_response = self.no_response
+    async def _start_response(self, status = None, headers = None):
+        if not status or not headers:
+            return self.send
+        start = dict(type="http.response.start", status=status, headers=headers)
+        await self.send(start)
+        self.write = self.send
+        return self.send
+
+    async def start_response(self, status=200, headers=[]):
+        if self.headers_sent:
+            return self.send or None
+        if isinstance(headers, (dict, Headers)):
+            headers = list(headers.items())
+        self.headers_sent = True
+        #await self._start_response(status, headers)
+        if type(status) == str or type(status) == bytes:
+            status = int(status.split(" ", 1)[0])
+        # await self.send(dict(type="http.response.start", status=status, headers=headers))
+        self.headers_sent = True
+        return self.send
+
+    async def _send_response(self, status_msg, response):
+
+        if not self.headers_sent and 'content-type' not in self.headers:
+            if response and self.is_html(response):
+                self.headers.add_header(
+                    'Content-Type', 'text/html', charset='utf-8')
+            else:
+                self.headers.add_header(
+                    'Content-Type', 'text/plain', charset='utf-8')
+
+        if response and self.config.debug:
+            r = self.tobytes(response)
+            if hasattr(response, "split"):
+                dbg_msg_l = response.split('\n')
+            else:
+                dbg_msg_l = response
+            dbg_msg = ''
+            for msg in dbg_msg_l:
+                if len(msg) > len(dbg_msg):
+                    dbg_msg = msg
+            self.debug(f"\nRESPONSE: '{dbg_msg[ : 79]}{'...' if len(dbg_msg) > 79 else ''}'")
+
+#        await self.start_response(status_msg, self.headers.items())
+        retval = b""
+        for i in range(len(response)):
+            retval += self.tobytes(response[i])
+        # self.clear_headers()
+        return [retval]
+
+
+    async def __call__(self, scope, receive, send):
+        # # Most important to make this thing thread safe in presence of multithreaded/multiprocessing servers
+        # self.init_local_data()
+        self.scope = scope
+        self.receive = receive
+        self.send = send
+        self.body = b""
+
+        self.environ = self.scope2env(self.scope, self.body)
+        # #self._start_response = self.no_response
 
         if not self._test_environ():
-            return [b'']
+             return [b'']
+
+        full_path = self.scope['path']
+
+        msgtype = self.scope.get("type")
 
         self._config_environ()
 
@@ -4105,58 +4220,86 @@ class AsyncBicchiere(Bicchiere):
 
         response = None
         status_msg = None
+        status = 200
 
-        status_msg, response = self._try_static()
-        if status_msg and response:
-            self.logger.info(
-                f"Proceeding from _try_static with status: {status_msg}")
-            return self._send_response(status_msg, response)
+        if msgtype in ["http", "https"]:
+            status_msg, response = self._try_static()
+            if status_msg and response:
+                self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+                status = int(status_msg.split(" ", 1)[0])
+                await self.send(dict(type="http.response.start", status=status, headers=self.headers.items()))
+                body = await self._send_response(status_msg, response)
+                contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
+                return await self.send(contents)
+        
 
-        status_msg, response = self._try_cgi()
-        if status_msg and response:
-            self.logger.info(
-                f"Proceeding from _try_static with status: {status_msg}")
-            return self._send_response(status_msg, response)
+            status_msg, response = self._try_cgi()
+            if status_msg and response:
+                self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
+                status = int(status_msg.split(" ", 1)[0])
+                await self.send(dict(type="http.response.start", status=status, headers=self.headers.items()))
+                body = await self._send_response(status_msg, response)
+                contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
+                return await self.send(contents)
 
-        status_msg, response = self._try_default()
-        if status_msg and response:
-            self.logger.info(
-                f"Proceeding from _try_default with status: {status_msg}")
-            return self._send_response(status_msg, response)
 
-        status_msg, response = self._try_routes()
-        if status_msg and response and re.match(r"^[235]", status_msg):
-            self.logger.info(
-                f"Proceeding from _try_routes with status: {status_msg}")
-            return self._send_response(status_msg, response)
+            status_msg, response = self._try_default()
+            if status_msg and response:
+                self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
+                body = await self._send_response(status_msg, response)
+                contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
+                return await self.send(contents)
 
-        status_msg, response = self._try_mounted()
-        if status_msg and response:
-            self.logger.info(
-                f"Proceeding from _try_mount with status: {status_msg}")
-            return self._send_response(status_msg, response)
 
-        return self._send_response(self._abort(404, self.environ['PATH_INFO'],
-                                               " not found AT ALL."))
+            # status_msg, response = self._try_routes()
+            # if status_msg and response and re.match(r"^[235]", status_msg):
+            #     self.logger.info(
+            #         f"Proceeding from _try_routes with status: {status_msg}")
+            #     return self._send_response(status_msg, response)
 
-        self.environ = context
+            # status_msg, response = self._try_mounted()
+            # if status_msg and response:
+            #     self.logger.info(
+            #         f"Proceeding from _try_mount with status: {status_msg}")
+            #     return self._send_response(status_msg, response)
+
+            # return self._send_response(self._abort(404, self.environ['PATH_INFO'],
+            #                                        " not found AT ALL."))
+
+        if msgtype in ["http", "https"]:
+            more_body = True
+            while more_body:
+                msg = await self.receive()
+                if msg.get("type") == "http.request.body":
+                    self.body += msg.get("body", b"")
+                more_body = msg.get("more_body", False)
+        elif msgtype in ["websocket"]:
+            self.logger.info("Received a WEBSOCKET msessage")
+        else:
+            raise HTTPException(f"Received a message type({msgtype}) this app can't handle.")
+
+        status = 200
         if len(self.routes) == 0:
             body = self.tobytes(await self.demo_app())
         else:
-            full_path = self.environ['path']
             route = self.get_route_match(full_path)
             if route:
-                body = self.tobytes(await route.func(**route.args))
+                if asyncio.iscoroutinefunction(route.func):
+                    body = self.tobytes(await route.func(**route.args))
+                else:
+                    body = self.tobytes(route.func(**route.args))
             else:
+                status = 404
                 body = b"404 Not found"
 
-        start = dict(type="http.response.start", status=200,
+        start = dict(type="http.response.start", status=status,
                      headers=[[b'content-type', b'text/html' if self.is_html(body) else b'text/plain']])
 
         contents = dict(type='http.response.body', body=body, more_body=False)
 
-        await send(start)
-        await send(contents)
+        await self.send(start)
+        self.headers_sent = True
+        await self.send(contents)
 
     @classmethod
     def demo_app(cls):
@@ -4165,14 +4308,16 @@ class AsyncBicchiere(Bicchiere):
 
         @app.get("/")
         async def home():
-            body = [f"{clave} =  {valor}\n".encode(
-                "utf-8") for clave, valor in app.environ.items()]
-            body.insert(0, b'ASGI Variables\n______________\n\n')
+            body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in app.environ.items()]
+            body.insert(0, b'ASGI Environment\n________________\n\n')
+            body.append(b'_' * 80)
+            body.append(b"\n\n")
+            body.append(b'ASGI Scope\n__________\n\n')
+            body.extend([f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in app.scope.items()])
             body.append(b'_' * 80)
             body.append(b"\n\n")
             app.counter += 1
-            body.append(
-                f"This app was visited {app.counter} times.\n".encode("utf-8"))
+            body.append(f"This app was visited {app.counter} times.\n".encode("utf-8"))
             return b"".join(body)
 
         return app
@@ -4197,10 +4342,10 @@ def main():
     parser.add_argument('-p', '--port', type=int,
                         default=8086, help="Server port number.")
     parser.add_argument('--app', type=str,
-                        default="bicchiere:application", help="App to serve.")
+                        default="bicchiere:asgi_application", help="App to serve.")
     parser.add_argument('-a', '--addr', type=str,
                         default="127.0.0.1", help="Server address.")
-    parser.add_argument('-s', '--server', type=str, default="bicchiereserver",
+    parser.add_argument('-s', '--server', type=str, default="uvicorn",
                         help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true",
                         help="Outputs Bicchiere version and quits")
@@ -4219,7 +4364,7 @@ def main():
     if ":" in args.app:
         nmodule, napp = args.app.split(":")[:2]
     else:
-        nmodule, napp = args.app, "application"
+        nmodule, napp = args.app, "asgi_application"
     try:
         os.sys.path.append(os.getcwd())
         os.sys.path.append(os.path.split(os.path.abspath(__file__))[0])

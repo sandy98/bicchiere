@@ -22,5 +22,8 @@ build/
 MANIFEST
 bicchiere.egg-info/
 *vscode/**
+oven/wsgi.py
+oven/sync.py
+
 
 
