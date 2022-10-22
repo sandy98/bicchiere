@@ -1522,7 +1522,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 7, 1)
+    __version__ = (1, 8, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1969,14 +1969,17 @@ class BicchiereMiddleware:
                         response = route.func(**route.args)
                     return status_msg, response
                 else:
-                    return self._abort(405, self.environ.get('REQUEST_METHOD'),
+                    status_msg, response = self._abort(405, self.environ.get('REQUEST_METHOD'),
                                        f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
+                    return status_msg, response
             else:
-                #return self._abort(404, self.environ.get('path_info'.upper()), " not found.")
+                #status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), " not found.")
+                #return status_msg, response
                 return None, None
         except Exception as exc:
-            return self._abort(500, self.environ.get('PATH_INFO'),
+            status_msg, response = self._abort(500, self.environ.get('PATH_INFO'),
                                f'raised an error: {str(exc)}')
+            return status_msg, response
 
     def _try_default(self):
         if len(self.routes) == 0 and len(self.mounted_apps) == 0:
@@ -2111,7 +2114,8 @@ class BicchiereMiddleware:
         curr_path = self.environ.get('PATH_INFO')
         if self.cgi_path in curr_path:
             if not self.config.allow_cgi:
-                return self._abort(403, curr_path, "CGI Execution not allowed.")
+                status_msg, response = self._abort(403, curr_path, "CGI Execution not allowed.")
+                return status_msg, response
             resource = f"{os.getcwd()}{self.environ.get('path_info'.upper())}"
             self.debug("Searching for resource '{}'".format(resource))
             if os.path.exists(resource):
@@ -2132,11 +2136,14 @@ class BicchiereMiddleware:
                                 self.headers.add_header(k, v)
                         return status_line, response
                     else:
-                        return self._abort(500, curr_path, " cannot be executed.")
+                        status_msg, response = self._abort(500, curr_path, " cannot be executed.")
+                        return status_msg, response
                 else:
-                    return self._abort(400, curr_path, " is not a file, so it can't be executed.")
+                    status_msg, response = self._abort(400, curr_path, " is not a file, so it can't be executed.")
+                    return status_msg, response
             else:
-                return self._abort(404, curr_path, " resource not found in this server.")
+                status_msg, response = self._abort(404, curr_path, " resource not found in this server.")
+                return status_msg, response
         else:
             return None, None
 
@@ -2738,7 +2745,8 @@ class Bicchiere(BicchiereMiddleware):
                 f"Proceeding from _try_mounted with status: {status_msg}")
             return self._send_response(status_msg, response)
 
-        return self._send_response(self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL."))
+        status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL.")
+        return self._send_response(status_msg, response)
 
     def get_route_match(self, path):
         "Used by the app to match received path_info vs. saved route patterns"
@@ -4029,12 +4037,20 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
         if server_name == 'asgiserver':
             server = ASGIServer(host, port, app)
             def server_action():
-                return asyncio.run(server.serve_forever())
-            
+                try:
+                    asyncio.run(server.serve_forever())
+                except KeyboardInterrupt:
+                    print("\nServer quitting due to keyboard interrupt.\n")
+                    sys.exit()
+                except Exception as exc:
+                    print(f"\nServer quitting due to {repr(exc)}.\n")
+                    sys.exit(255)
+
         try:
             # server.serve_forever()
             stype = "ASGI" if Bicchiere.is_asgi(app) else "WSGI"
-            print("\n\n", f"Running Bicchiere {stype} ({app.name}) version {Bicchiere.get_version()}",
+            appname = app.name if hasattr(app, "name") else app.__class__.__name__
+            print("\n\n", f"Running Bicchiere {stype} ({appname}) version {Bicchiere.get_version()}",
                   f"using {(server_name or 'bicchiereserver').capitalize()}",
                   f"at {host}:{port if port else ''}")  # ,
             # f"\n Current working file: {os.path.abspath(__file__)}", "\n")
@@ -4120,7 +4136,7 @@ class AsyncBicchiere(Bicchiere):
         self.logger.info(f"Redirecting (status code {status_code}) to {path}")
         contents = dict(type='http.response.body', body=self.tobytes(status_line), more_body=True)
         try:
-            await self.send(dict(type="http.response.start", status=status_code, headers=[('Location', path)]))
+            await self.send(dict(type="http.response.start", status=status_code, headers=[(b'Location', BicchiereMiddleware.tobytes(path))]))
             self.headers_sent = True
         except:
             pass
@@ -4159,7 +4175,7 @@ class AsyncBicchiere(Bicchiere):
         self.headers_sent = True
         return self.send
 
-    async def _send_response(self, response):
+    async def _send_response(self, status_msg, response):
 
         if not self.headers_sent and 'content-type' not in self.headers:
             if response and self.is_html(response):
@@ -4170,11 +4186,11 @@ class AsyncBicchiere(Bicchiere):
                     'Content-Type', 'text/plain', charset='utf-8')
 
         if response and self.config.debug:
-            r = self.tobytes(response)
-            if hasattr(response, "split"):
-                dbg_msg_l = response.split('\n')
+            bresponse = self.tobytes(response)
+            if hasattr(bresponse, "split"):
+                dbg_msg_l = bresponse.split(b'\n')
             else:
-                dbg_msg_l = response
+                dbg_msg_l = bresponse
             dbg_msg = ''
             for msg in dbg_msg_l:
                 if len(msg) > len(dbg_msg):
@@ -4204,15 +4220,16 @@ class AsyncBicchiere(Bicchiere):
                         response = route.func(**route.args)
                     return status_msg, response
                 else:
-                    return self._abort(405, self.environ.get('REQUEST_METHOD'),
-                                       f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
+                    status_msg, response = self._abort(405, self.environ.get('REQUEST_METHOD'), f'not allowed for URL: {self.environ.get("PATH_INFO", "")}')
+                    return status_msg, response
             else:
-                #return self._abort(404, self.environ.get('path_info'.upper()), " not found.")
+                #status_msg, response = self._abort(404, self.environ.get('path_info'.upper()), " not found.")
+                #return status_msg, response
                 return None, None
         except Exception as exc:
-            return self._abort(500, self.environ.get('PATH_INFO'),
+            status_msg, response = self._abort(500, self.environ.get('PATH_INFO'),
                                f'raised an error: {str(exc)}')
-
+            return status_msg, response
 
     def __init__(self, application = None, name = None, wsgi_app = None):
         super().__init__(application, name or self.__class__.__name__)
@@ -4268,7 +4285,7 @@ class AsyncBicchiere(Bicchiere):
 
         async def diamocidafare(status_msg, response):
             status = int(status_msg.split(" ", 1)[0])
-            body = await self._send_response(response)
+            body = await self._send_response(status_msg, response)
             contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
             try:
                 await self.send(dict(type="http.response.start", status=status, headers=self.headers.items()))
@@ -4313,7 +4330,7 @@ class AsyncBicchiere(Bicchiere):
             status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL.")
             self.logger.info(f"Resource {self.full_path} not found.\n")
             status = int(status_msg.split(" ", 1)[0])
-            body = await self._send_response(response)
+            body = await self._send_response(status_msg, response)
             contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
             if not self.headers_sent:
                 await self.send(dict(type="http.response.start", status=status, headers=[('Content-Type', 'text/html; charset=utf-8')]))
@@ -4441,7 +4458,7 @@ def create_status_line(status_code: int = 200):
 
 
 def format_headers(headers: List[Tuple[bytes, bytes]]):
-    return b"".join([key + b": " + value + b"\r\n" for key, value in headers])
+    return b"".join([BicchiereMiddleware.tobytes(key) + b": " + BicchiereMiddleware.tobytes(value) + b"\r\n" for key, value in headers])
 
 
 def make_response(status_code: int = 200, headers: List[Tuple[bytes, bytes]] = None,  body: bytes = b""):
@@ -4671,8 +4688,8 @@ def main():
     #parser.add_argument('--app', type=str, default="bicchiere:application", help="App to serve.")
     parser.add_argument('--app', type=str, default="bicchiere:asgi_application", help="App to serve.")
     parser.add_argument('-a', '--addr', type=str, default="127.0.0.1", help="Server address.")
-    parser.add_argument('-s', '--server', type=str, default="bicchiereserver", help="Server software.", choices=server_choices)
-    #parser.add_argument('-s', '--server', type=str, default="asgiserver", help="Server software.", choices=server_choices)
+    #parser.add_argument('-s', '--server', type=str, default="bicchiereserver", help="Server software.", choices=server_choices)
+    parser.add_argument('-s', '--server', type=str, default="asgiserver", help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version and quits")
     parser.add_argument('-D', '--debug', action="store_true", help="Turn on debugging mode")
 
