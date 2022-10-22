@@ -4609,9 +4609,11 @@ async def test_asgi_app(scope, receive, send):
         return
 
     global test_visitors
-    test_visitors += 1
-    start_response = dict(type="http.response.start", status=200, headers=[(b'Content-Type', b'text/html; charset=utf-8')])
-    html = """
+    start_response, html, body = None, None, None
+    if scope.get("path") == "/":
+        test_visitors += 1
+        start_response = dict(type="http.response.start", status=200, headers=[(b'Content-Type', b'text/html; charset=utf-8')])
+        html = """
     <!DOCTYPE html>
     <html lang="it">
         <head>
@@ -4643,6 +4645,11 @@ async def test_asgi_app(scope, receive, send):
         </body>
     </html>
     """.replace("{test_visitors}", str(test_visitors))
+    else:
+        start_response = dict(type="http.response.start", status=404, headers=[(b'Content-Type', b'text/html; charset=utf-8')])
+        html =f"""
+          <h2><strong style="color: #888; font-size: 20pt;">404</strong>&nbsp;Resource <strong style="color: red;">{scope.get("path")}</strong> not found.</h2>
+        """
     body = dict(type="http.response.body", more_body=False, body=html.encode() + b"")
     await send(start_response)
     await send(body)
