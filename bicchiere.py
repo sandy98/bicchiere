@@ -1535,7 +1535,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 8, 3)
+    __version__ = (1, 8, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3204,6 +3204,7 @@ class Bicchiere(BicchiereMiddleware):
 
     @classmethod
     def demo_app(cls):
+
         is_local = "ernesto" in os.getcwd()
         bevanda = random.choice(cls.bevande)
         FileSession.secret = "20181209"
@@ -3849,7 +3850,14 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
             quasi aliquam eligendi, placeat qui corporis!
             </p>
             <hr>
-            """
+            <div>
+               Version: @version@ 
+            </div>
+            <div>
+               App Type: @apptype@ 
+            </div>
+            <hr>
+            """.replace("@version@", app.version).replace("@apptype@", Bicchiere.config.get("apptype", "None"))
             info = Bicchiere.get_demo_content().format(
                 heading="The proverbial about page", contents=contents)
             return Bicchiere.render_template(demo_page_template,
@@ -3857,6 +3865,7 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                                              menu_content=str(menu),
                                              main_contents=info)
 
+        Bicchiere.config.apptype = "WSGI"
         return app
 
     @classmethod
@@ -4392,6 +4401,7 @@ class AsyncBicchiere(Bicchiere):
         async def myf42():
             return await app.redirect("/factorial/42")
 
+        Bicchiere.config.apptype = "ASGI"
         return app
 
 # End AsyncBicchiere
