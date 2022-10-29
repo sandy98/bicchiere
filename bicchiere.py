@@ -3,6 +3,7 @@
 
 from http.client import HTTPException
 import os, sys
+import webbrowser
 from xml.dom import NotSupportedErr
 if sys.version_info < (3, 6):
     raise NotSupportedErr("This software only runs within Python version 3.6 or higher.")
@@ -343,16 +344,12 @@ class WebSocket:
         self.read = read
         self.handler = handler
         self.do_compress = do_compress
-        self.origin = self.environ.get(
-            "HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
-        self.protocols = list(map(str.strip, self.environ.get(
-            "HTTP_SEC_WEBSOCKET_PROTOCOL", "").split(",")))
-        self.version = int(self.environ.get(
-            "HTTP_SEC_WEBSOCKET_VERSION", "0").strip())
+        self.origin = self.environ.get("HTTP_SEC_WEBSOCKET_ORIGIN") or self.environ.get("HTTP_ORIGIN")
+        self.protocols = list(map(str.strip, self.environ.get("HTTP_SEC_WEBSOCKET_PROTOCOL", "").split(",")))
+        self.version = int(self.environ.get("HTTP_SEC_WEBSOCKET_VERSION", "13").strip())
         self.path = self.environ.get("PATH_INFO", "/")
         if do_compress:
-            self.compressor = zlib.compressobj(
-                7, zlib.DEFLATED, -zlib.MAX_WBITS)
+            self.compressor = zlib.compressobj(7, zlib.DEFLATED, -zlib.MAX_WBITS)
             self.decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
 
         self.default_handler = self.logger.info
@@ -381,10 +378,8 @@ class WebSocket:
     def _decode_bytes(self, bytestring):
         if not bytestring:
             return ""
-
         try:
             return bytestring.decode("utf-8")
-
         except UnicodeDecodeError as e:
             self.logger.debug('UnicodeDecodeError')
             self.close(1007, str(e))
@@ -393,7 +388,6 @@ class WebSocket:
     def _encode_bytes(self, text):
         if not isinstance(text, str):
             text = str(text or "")
-
         return text.encode("utf-8")
 
     def _is_valid_close_code(self, code):
@@ -404,22 +398,18 @@ class WebSocket:
                 1100
                 or 2000 <= code <= 2999):
             return False
-
         return True
 
     def handle_close(self, payload):
         if not payload:
             self.close(1000, "")
             return
-
         if len(payload) < 2:
             raise ProtocolError("Invalid close frame: %s" % payload)
-
         code = struct.unpack("!H", payload[:2])[0]
         payload = payload[2:]
         if payload:
             payload.decode("utf-8")
-
         if not self._is_valid_close_code(code):
             raise ProtocolError("Invalid close code %s" % code)
         self.close(code, payload)
@@ -1535,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 8, 4)
+    __version__ = (1, 8, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1570,11 +1560,11 @@ class BicchiereMiddleware:
         """
         Builds a scope and request body into a WSGI environ object.
         """
-        if not scope.get("method"):
+        if not scope:
             return None
 
         environ = {
-            "REQUEST_METHOD": scope["method"],
+            "REQUEST_METHOD": scope.get("method", "GET"),
             "SCRIPT_NAME": BicchiereMiddleware.tobytes(scope.get("root_path", "")).decode("latin1"),
             "PATH_INFO": BicchiereMiddleware.tobytes(scope["path"]).decode("latin1"),
             "QUERY_STRING": BicchiereMiddleware.tobytes(scope["query_string"]).decode("ascii"),
@@ -2333,20 +2323,17 @@ class BicchiereMiddleware:
                 headers.append(
                     ("Sec-WebSocket-Extensions", "permessage-deflate"))
 
-            final_headers = [
-                (k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
+            final_headers = [(k, v) for k, v in headers if not wsgiref.util.is_hop_by_hop(k)]
             self.debug(f"Response headers for websocket:\n{final_headers}")
 
-            self.writer = self.start_response(
-                "101 Switching protocols", final_headers)
+            self.writer = self.start_response("101 Switching protocols", final_headers)
             self.writer(b"")
             self.headers_sent = True
             self._start_response = lambda *args, **kw: None
             # Create the websocket object and update environ
             self.reader = self.environ.get("wsgi.input").read
             websocket_class = self.config.get("websocket_class")
-            self.websocket = websocket_class(
-                self.environ.copy(), self.reader, self.writer, self, do_compress)
+            self.websocket = websocket_class(self.environ.copy(), self.reader, self.writer, self, do_compress)
             self.environ["wsgi.websocket"] = self.websocket
             self.environ["wsgi.version"] = wsversion
             # End of websocket creation part
@@ -4161,12 +4148,13 @@ class AsyncBicchiere(Bicchiere):
         try:
             await self.send(dict(type="http.response.start", status=status_code, headers=[(b'Location', BicchiereMiddleware.tobytes(path))]))
             self.headers_sent = True
-        except:
+        except Exception as exc:
+            self.logger.debug(f"EXCEPTION ocurred in REDIRECT while sending headers: {repr(exc)}")
             pass
         try:
             sentcontents = await self.send(contents)
-        except:
-            pass
+        except Exception as exc:
+            self.logger.debug(f"EXCEPTION ocurred in REDIRECT while sending body: {repr(exc)}")
         finally: #self.headers_sent = False
             return sentcontents
 
@@ -4295,11 +4283,82 @@ class AsyncBicchiere(Bicchiere):
                         self.body += msg.get("body", b"")
                     more_body = msg.get("more_body", False)
                 self.environ = self.scope2env(self.scope, self.body)
+                self.body = BytesIO(self.body)
+                self.body.seek(0)
             if not self._test_environ():
                 return [b'']
             self._config_environ()
         elif self.msgtype in ["websocket"]:
-            self.logger.info("Received a WEBSOCKET msessage")
+            self.logger.info("Received a WEBSOCKET message")
+            self.logger.info(json.dumps(self.scope, default=lambda x: repr(x)))
+            response = None
+            route = self.get_route_match(self.scope.get("path"))
+            if route:
+                more_body = True
+                while more_body:
+                    msg = await self.receive()
+                    if msg.get("type") == "websocket.connect":
+                        self.logger.info("Received a websocket.connect request")
+                        self.logger.info(json.dumps(msg, default=lambda x: repr(x)))
+                    else:
+                        self.logger.info(f"Received a {msg.get('type')} request")
+                    more_body = False
+                request_headers = dict(self.scope.get("headers"))
+                response_headers = []
+                response = dict(status = 101, type = "websocket.accept", headers = response_headers)
+                # Here goes nothing
+                wsversion = request_headers.get(b"sec-websocket-version", None)
+                self.logger.debug(f"@@@@@@@ WSVERSION = {wsversion} @@@@@@@ ")
+                known_versions = (b'13', b'8', b'7')
+                guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+                if not wsversion or wsversion not in known_versions:
+                    self.debug(f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {request_headers.get(b"SEC-WEBSOCKET-VERSION".lower())}')
+                    raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
+                wskey = request_headers.get(b"sec-websocket-key")
+                if not wskey:
+                    self.debug(f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(request_headers.get(b"SEC-WEBSOCKET-KEY".lower()))}')
+                    raise WebSocketError("Non existent websocket key.")
+                key_len = len(base64.b64decode(wskey))
+                if key_len != 16:
+                    self.debug(f'Error with websocket key length (should be 16) but is {key_len}')
+                    raise WebSocketError(f"Incorrect websocket key.")
+                requested_protocols = request_headers.get(b'sec-websocket-protocol', b'')
+                protocol = None if not requested_protocols else re.split(r"/s*,/s*", requested_protocols)[0]
+                extensions = list(map(lambda ext: ext.split(b";")[0].strip(),
+                                    request_headers.get(b"sec-websocket-extensions", "").split(b",")))
+
+                do_compress = b"permessage-deflate" in extensions
+                key_guid = wskey.decode("latin-1") + guid
+                sha_hash = hashlib.sha1(key_guid.encode("latin-1"))
+                digest = sha_hash.digest()
+                b64_encoded = base64.b64encode(digest)
+                accept = b64_encoded.decode("latin-1")
+                #accept2 = base64.b64encode(hashlib.sha1((wskey.decode("latin-1") + guid).encode("latin-1")).digest()).decode("latin-1")
+                response_headers = [(b"Upgrade", b"websocket"),
+                        (b"Connection", b"Upgrade"),
+                        (b"Sec-WebSocket-Accept", BicchiereMiddleware.tobytes(accept))
+                    ]
+                if protocol:
+                    response_headers.append((b"Sec-WebSocket-Protocol", BicchiereMiddleware.tobytes(protocol)))
+
+                if do_compress:
+                    response_headers.append((b"Sec-WebSocket-Extensions", b"permessage-deflate"))
+
+                response["headers"] = response_headers
+
+                syncreceive = async_to_sync(self.receive)
+                syncsend = async_to_sync(self.send)
+                environ = self.environ.copy()
+                self.scope['websocket'] = WebSocket(environ, syncreceive, syncsend, self, do_compress)
+
+                await self.send(response)
+                return await route.func(**route.args)
+            else:
+                response = dict(status = 403, type="websocket.close")
+                return await self.send(response)
+            #self.environ = self.scope2env(self.scope, self.body)
+            #self.body = BytesIO(self.body)
+            #self.body.seek(0)
         elif self.msgtype in ["lifespan"]:
             self.logger.info("Received a LIFESPAN msessage")
         elif self.msgtype in ["disconnect"]:
@@ -4368,12 +4427,112 @@ class AsyncBicchiere(Bicchiere):
                 await self.send(dict(type="http.response.start", status=status, headers=[('Content-Type', 'text/html; charset=utf-8')]))
                 self.headers_sent = True
             return await self.send(contents)
+        elif self.msgtype in ["websocket"]:
+            self.logger.debug("Received message type 'websocket'.\nThis has been processed elsewhere and thus, this message should never appear.")
+        else:
+            self.logger.debug(f"Received message type '{self.msgtype}'.\nFor now, this won't be processed.")
+
 
     @classmethod
     def demo_app(cls):
         app = cls(name="Demo Async App")
         app.counter = 0
         app.wsgi_app = Bicchiere.demo_app()
+
+
+        @app.get("/echo/wstest")
+        async def wstest():
+            # wsock = app.scope.get("websocket")
+            # if not wsock:
+            #     return "Something went awry, no websocket :-(( "
+            # else:
+            #     app.debug("Got a shiny new websocket!")
+
+            # def do_hb():
+            #     while True:
+            #         try:
+            #             sleep(1)
+            #             wsock.heartbeat()
+            #         except Exception as exc:
+            #             app.debug(
+            #                 f"Exception ocurred during heartbeat loop: {repr(exc)}")
+            #             return
+
+            # def pong_handler(evt):
+            #     current_millis = Bicchiere.millis()
+            #     prev_millis = int(evt.data)
+            #     roundtrip = current_millis - prev_millis
+            #     logger.info(
+            #         f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
+            # wsock.onpong += pong_handler
+
+            # def message_handler(evt):
+            #     #data = wsock.receive()
+            #     data = evt.data.decode("utf-8")
+            #     if data != None:
+            #         for i in range(1, 2):
+            #             dt = datetime.now()
+            #             sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
+            #             msg = f"\tECHO at ({sdate}):\t{repr(data)}"
+            #             app.logger.info(msg)
+            #             wsock.send(msg)
+            #             # sleep(2)
+            # wsock.onmessage += message_handler
+
+            # try:
+            #     wsock.send("Ciao, straniero!")
+            #     hbt = threading.Thread(target=do_hb, name="h_b_thread", args=())
+            #     hbt.setDaemon(True)
+            #     hbt.start()
+            # except WebSocketError as wserr:
+            #     app.debug(f"WebSocketError: {repr(wserr)}")
+            #     return b''
+            # except Exception as exc:
+            #     app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
+            #     return b''
+            # while True:
+            #     try:
+            #         wsock.receive()
+            #     except WebSocketError as wserr:
+            #         app.debug(f"WebSocketError: {repr(wserr)}")
+            #         break
+            #     except Exception as exc:
+            #         app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
+            #         break
+
+
+            try:
+                d = dict(type="websocket.send", bytes=b"Ciao, Straniero!")
+                app.logger.info(f"Sending websocket message to client: {repr(d)}")
+                #await app.send(d)
+                app.logger.info("Message sent to client.")
+            except Exception as exc:
+                app.logger.debug(f"Something wrong happened while trying to send data: {repr(exc)}")
+
+            while True:
+                await asyncio.sleep(0.01)
+                #msg = await app.receive()
+                msg = None
+                msgtype = None
+                if msg:
+                     #await app.send(data)
+                     if hasattr(msg, "get"):
+                        msgtype = msg.get("type", "")
+                        if msgtype == "websocket.disconnect":
+                            app.logger.info(f"Received a websocket DISCONNECT message: {repr(msg)}")
+                            return #await app.send(dict(type = "websocket.close"))
+                        elif msgtype == "websocket.receive":
+                            app.logger.info(f"Received a websocket message: {repr(msg)}")
+                            await app.send(dict(type="websocket.send", bytes = b"River Plate"))
+                        else:
+                            app.logger.error(f"Received an unknown websocket message: {repr(msg)}")
+                            return
+                elif msg == b"":
+                    app.logger.debug(f"Received an empty websocket message: {repr(msg)}")
+                    return
+
+            return None
+
 
         @app.get("/showscope")
         async def home():
@@ -4388,6 +4547,7 @@ class AsyncBicchiere(Bicchiere):
             app.counter += 1
             body.append(f"This app was visited {app.counter} times.\n".encode("utf-8"))
             return b"".join(body)
+
 
         @app.get("/demo/hello/<name>")
         @app.get("/demo/hello")
