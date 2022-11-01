@@ -14,7 +14,7 @@ pip install bicchiere
 
 ## [Applicazione Demo Progetto](https://bicchiere.sytes.net)
 
-Versione corrente: 1.8.5
+Versione corrente: 1.9.0
 
 <p>
     <a href="https://pypi.python.org/pypi/bicchiere" target="_blank" rel="nofollow"><img alt="GitHub tag (latest by date)" src="https://img.shields.io/github/v/tag/sandy98/bicchiere?color=%230cc000&label=bicchiere"></a>           

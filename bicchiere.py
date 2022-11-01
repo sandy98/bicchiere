@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 8, 5)
+    __version__ = (1, 9, 0)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1566,9 +1566,9 @@ class BicchiereMiddleware:
         environ = {
             "REQUEST_METHOD": scope.get("method", "GET"),
             "SCRIPT_NAME": BicchiereMiddleware.tobytes(scope.get("root_path", "")).decode("latin1"),
-            "PATH_INFO": BicchiereMiddleware.tobytes(scope["path"]).decode("latin1"),
-            "QUERY_STRING": BicchiereMiddleware.tobytes(scope["query_string"]).decode("ascii"),
-            "SERVER_PROTOCOL": "HTTP/%s" % scope["http_version"],
+            "PATH_INFO": BicchiereMiddleware.tobytes(scope.get("path", b"/")).decode("latin1"),
+            "QUERY_STRING": BicchiereMiddleware.tobytes(scope.get("query_string", b"")).decode("ascii"),
+            "SERVER_PROTOCOL": "HTTP/%s" % scope.get("http_version", "1.1"),
             "wsgi.version": (1, 0),
             "wsgi.url_scheme": scope.get("scheme", "http"),
             "wsgi.input": BytesIO(body),
@@ -4251,6 +4251,42 @@ class AsyncBicchiere(Bicchiere):
         self.send = None
         self.body = None
 
+
+    async def websocket_handler(self, route: Route = None):
+        while True:
+            event = await self.receive()
+
+            if event['type'] == 'websocket.connect':
+                self.logger.info("Accepting incoming websocket connection request.")
+                await self.send({
+                    'type': 'websocket.accept'
+                })
+            elif event['type'] == 'websocket.disconnect':
+                self.logger.info("Handling disconnect...")
+                break
+            elif event['type'] == 'websocket.receive':
+                text = event['text'] if event.get('text') else event['bytes'].decode()
+                self.logger.info(f"Websocket received this text: {text}")
+                if route:
+                    if asyncio.iscoroutinefunction(route.func):
+                        response = await route.func(event)
+                    else:
+                        response = route.func(event)
+                    await self.send({
+                        'type': 'websocket.send',
+                        'text': response
+                    })
+                else:
+                    await self.send({
+                        'type': 'websocket.send',
+                        'text': text
+                    })
+            else:
+                print(f"Received event type: {event.get('type')} (Don't know what to do with that...)")
+                #await send({
+                #    'type': 'websocket.accept'
+                #})
+
     async def __call__(self, scope, receive, send):
         # self.init_local_data()
         self.scope = scope
@@ -4289,78 +4325,24 @@ class AsyncBicchiere(Bicchiere):
                 return [b'']
             self._config_environ()
         elif self.msgtype in ["websocket"]:
-            self.logger.info("Received a WEBSOCKET message")
-            self.logger.info(json.dumps(self.scope, default=lambda x: repr(x)))
-            response = None
+            self.logger.info("Received a WEBSOCKET request")
+            #self.logger.info(json.dumps(self.scope, default=lambda x: repr(x)))
             route = self.get_route_match(self.scope.get("path"))
             if route:
-                more_body = True
-                while more_body:
-                    msg = await self.receive()
-                    if msg.get("type") == "websocket.connect":
-                        self.logger.info("Received a websocket.connect request")
-                        self.logger.info(json.dumps(msg, default=lambda x: repr(x)))
-                    else:
-                        self.logger.info(f"Received a {msg.get('type')} request")
-                    more_body = False
-                request_headers = dict(self.scope.get("headers"))
-                response_headers = []
-                response = dict(status = 101, type = "websocket.accept", headers = response_headers)
-                # Here goes nothing
-                wsversion = request_headers.get(b"sec-websocket-version", None)
-                self.logger.debug(f"@@@@@@@ WSVERSION = {wsversion} @@@@@@@ ")
-                known_versions = (b'13', b'8', b'7')
-                guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-                if not wsversion or wsversion not in known_versions:
-                    self.debug(f'Error with HTTP_SEC_WEBSOCKET_VERSION header: {request_headers.get(b"SEC-WEBSOCKET-VERSION".lower())}')
-                    raise WebSocketError(f"Websocket version {wsversion if wsversion else 'unknown'} not allowed.")
-                wskey = request_headers.get(b"sec-websocket-key")
-                if not wskey:
-                    self.debug(f'Error with HTTP_SEC_WEBSOCKET_KEY header: {repr(request_headers.get(b"SEC-WEBSOCKET-KEY".lower()))}')
-                    raise WebSocketError("Non existent websocket key.")
-                key_len = len(base64.b64decode(wskey))
-                if key_len != 16:
-                    self.debug(f'Error with websocket key length (should be 16) but is {key_len}')
-                    raise WebSocketError(f"Incorrect websocket key.")
-                requested_protocols = request_headers.get(b'sec-websocket-protocol', b'')
-                protocol = None if not requested_protocols else re.split(r"/s*,/s*", requested_protocols)[0]
-                extensions = list(map(lambda ext: ext.split(b";")[0].strip(),
-                                    request_headers.get(b"sec-websocket-extensions", "").split(b",")))
-
-                do_compress = b"permessage-deflate" in extensions
-                key_guid = wskey.decode("latin-1") + guid
-                sha_hash = hashlib.sha1(key_guid.encode("latin-1"))
-                digest = sha_hash.digest()
-                b64_encoded = base64.b64encode(digest)
-                accept = b64_encoded.decode("latin-1")
-                #accept2 = base64.b64encode(hashlib.sha1((wskey.decode("latin-1") + guid).encode("latin-1")).digest()).decode("latin-1")
-                response_headers = [(b"Upgrade", b"websocket"),
-                        (b"Connection", b"Upgrade"),
-                        (b"Sec-WebSocket-Accept", BicchiereMiddleware.tobytes(accept))
-                    ]
-                if protocol:
-                    response_headers.append((b"Sec-WebSocket-Protocol", BicchiereMiddleware.tobytes(protocol)))
-
-                if do_compress:
-                    response_headers.append((b"Sec-WebSocket-Extensions", b"permessage-deflate"))
-
-                response["headers"] = response_headers
-
-                syncreceive = async_to_sync(self.receive)
-                syncsend = async_to_sync(self.send)
-                environ = self.environ.copy()
-                self.scope['websocket'] = WebSocket(environ, syncreceive, syncsend, self, do_compress)
-
-                await self.send(response)
-                return await route.func(**route.args)
+                return await self.websocket_handler(route)
             else:
-                response = dict(status = 403, type="websocket.close")
-                return await self.send(response)
-            #self.environ = self.scope2env(self.scope, self.body)
-            #self.body = BytesIO(self.body)
-            #self.body.seek(0)
+                return await self.websocket_handler(None)
         elif self.msgtype in ["lifespan"]:
             self.logger.info("Received a LIFESPAN msessage")
+            while True:
+                message = await receive()
+                if message['type'] == 'lifespan.startup':
+                    # Do some startup here!
+                    await send({'type': 'lifespan.startup.complete'})
+                elif message['type'] == 'lifespan.shutdown':
+                    # Do some shutdown here!
+                    await send({'type': 'lifespan.shutdown.complete'})
+                    return        
         elif self.msgtype in ["disconnect"]:
             self.logger.info("Received a DISCONNECT msessage")
         else:
@@ -4441,101 +4423,18 @@ class AsyncBicchiere(Bicchiere):
 
 
         @app.get("/echo/wstest")
-        async def wstest():
-            # wsock = app.scope.get("websocket")
-            # if not wsock:
-            #     return "Something went awry, no websocket :-(( "
-            # else:
-            #     app.debug("Got a shiny new websocket!")
-
-            # def do_hb():
-            #     while True:
-            #         try:
-            #             sleep(1)
-            #             wsock.heartbeat()
-            #         except Exception as exc:
-            #             app.debug(
-            #                 f"Exception ocurred during heartbeat loop: {repr(exc)}")
-            #             return
-
-            # def pong_handler(evt):
-            #     current_millis = Bicchiere.millis()
-            #     prev_millis = int(evt.data)
-            #     roundtrip = current_millis - prev_millis
-            #     logger.info(
-            #         f"Received PONG frame with payload: {prev_millis} milliseconds, implying a roundtrip of {roundtrip} milliseconds.")
-            # wsock.onpong += pong_handler
-
-            # def message_handler(evt):
-            #     #data = wsock.receive()
-            #     data = evt.data.decode("utf-8")
-            #     if data != None:
-            #         for i in range(1, 2):
-            #             dt = datetime.now()
-            #             sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
-            #             msg = f"\tECHO at ({sdate}):\t{repr(data)}"
-            #             app.logger.info(msg)
-            #             wsock.send(msg)
-            #             # sleep(2)
-            # wsock.onmessage += message_handler
-
-            # try:
-            #     wsock.send("Ciao, straniero!")
-            #     hbt = threading.Thread(target=do_hb, name="h_b_thread", args=())
-            #     hbt.setDaemon(True)
-            #     hbt.start()
-            # except WebSocketError as wserr:
-            #     app.debug(f"WebSocketError: {repr(wserr)}")
-            #     return b''
-            # except Exception as exc:
-            #     app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
-            #     return b''
-            # while True:
-            #     try:
-            #         wsock.receive()
-            #     except WebSocketError as wserr:
-            #         app.debug(f"WebSocketError: {repr(wserr)}")
-            #         break
-            #     except Exception as exc:
-            #         app.debug(f"{exc.__class__.__name__}: {repr(exc)}")
-            #         break
-
-
-            try:
-                d = dict(type="websocket.send", bytes=b"Ciao, Straniero!")
-                app.logger.info(f"Sending websocket message to client: {repr(d)}")
-                #await app.send(d)
-                app.logger.info("Message sent to client.")
-            except Exception as exc:
-                app.logger.debug(f"Something wrong happened while trying to send data: {repr(exc)}")
-
-            while True:
-                await asyncio.sleep(0.01)
-                #msg = await app.receive()
-                msg = None
-                msgtype = None
-                if msg:
-                     #await app.send(data)
-                     if hasattr(msg, "get"):
-                        msgtype = msg.get("type", "")
-                        if msgtype == "websocket.disconnect":
-                            app.logger.info(f"Received a websocket DISCONNECT message: {repr(msg)}")
-                            return #await app.send(dict(type = "websocket.close"))
-                        elif msgtype == "websocket.receive":
-                            app.logger.info(f"Received a websocket message: {repr(msg)}")
-                            await app.send(dict(type="websocket.send", bytes = b"River Plate"))
-                        else:
-                            app.logger.error(f"Received an unknown websocket message: {repr(msg)}")
-                            return
-                elif msg == b"":
-                    app.logger.debug(f"Received an empty websocket message: {repr(msg)}")
-                    return
-
-            return None
-
+        async def wstest(evt):
+            text: str = evt.get("text") or evt.get("bytes").decode()
+            app.logger.info(f"\n\n/echo/wstest received '{text}'\n\n")
+            dt = datetime.now()
+            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
+            full_text = f"\tECHO at ({sdate}):\t{repr(text)}"
+            app.logger.info(f"Returning ws message: '{full_text}'\n\n")
+            #return text.upper()
+            return full_text
 
         @app.get("/showscope")
-        async def home():
+        async def showscope():
             body = [f"{clave} =  {valor}\n".encode("utf-8") for clave, valor in app.environ.items()]
             body.insert(0, b'ASGI Environment\n________________\n\n')
             body.append(b'_' * 80)
@@ -4555,9 +4454,9 @@ class AsyncBicchiere(Bicchiere):
         def hello(name="Straniero"):
             return f"<h1>Ciao, {name.title()}!</h1>\n<p>Bicchiere ti saluta.</p>"
 
-        app.mount("/", app.wsgi_app)
+        # app.mount("/", app.wsgi_app)
 
-        @app.get("/f42")
+        @app.get("demo/f42")
         async def myf42():
             return await app.redirect("/factorial/42")
 
