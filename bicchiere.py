@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 9, 0)
+    __version__ = (1, 9, 1)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3803,6 +3803,7 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
 
         @app.get("/about")
         def about():
+            a_or_w =  "ASGI" if Bicchiere.is_asgi(app) else "WSGI" if Bicchiere.is_wsgi(app) else "UNKNOWN"
             contents = """
             <hr>
             <p style="text-align: left;">
@@ -3844,7 +3845,7 @@ Details at <a href="https://github.com/sandy98/bicchiere/wiki/Bicchiere-Websocke
                App Type: @apptype@ 
             </div>
             <hr>
-            """.replace("@version@", app.version).replace("@apptype@", Bicchiere.config.get("apptype", "None"))
+            """.replace("@version@", app.version).replace("@apptype@", a_or_w)
             info = Bicchiere.get_demo_content().format(
                 heading="The proverbial about page", contents=contents)
             return Bicchiere.render_template(demo_page_template,
@@ -4252,7 +4253,7 @@ class AsyncBicchiere(Bicchiere):
         self.body = None
 
 
-    async def websocket_handler(self, route: Route = None):
+    async def default_websocket_handler(self):
         while True:
             event = await self.receive()
 
@@ -4262,30 +4263,18 @@ class AsyncBicchiere(Bicchiere):
                     'type': 'websocket.accept'
                 })
             elif event['type'] == 'websocket.disconnect':
-                self.logger.info("Handling disconnect...")
+                self.logger.info("Handling websocket disconnect...")
                 break
             elif event['type'] == 'websocket.receive':
                 text = event['text'] if event.get('text') else event['bytes'].decode()
                 self.logger.info(f"Websocket received this text: {text}")
-                if route:
-                    if asyncio.iscoroutinefunction(route.func):
-                        response = await route.func(event)
-                    else:
-                        response = route.func(event)
-                    await self.send({
-                        'type': 'websocket.send',
-                        'text': response
-                    })
-                else:
-                    await self.send({
-                        'type': 'websocket.send',
-                        'text': text
-                    })
+                await self.send({
+                    'type': 'websocket.send',
+                    'text': text
+                })
             else:
-                print(f"Received event type: {event.get('type')} (Don't know what to do with that...)")
-                #await send({
-                #    'type': 'websocket.accept'
-                #})
+                self.logger.debug(f"Received event type: {event.get('type')} (Don't know what to do with that...)")
+                break
 
     async def __call__(self, scope, receive, send):
         # self.init_local_data()
@@ -4329,9 +4318,12 @@ class AsyncBicchiere(Bicchiere):
             #self.logger.info(json.dumps(self.scope, default=lambda x: repr(x)))
             route = self.get_route_match(self.scope.get("path"))
             if route:
-                return await self.websocket_handler(route)
+                if asyncio.iscoroutinefunction(route.func):
+                    return await route.func(**route.args)
+                else:
+                    return route.func(**route.args)
             else:
-                return await self.websocket_handler(None)
+                return await self.default_websocket_handler()
         elif self.msgtype in ["lifespan"]:
             self.logger.info("Received a LIFESPAN msessage")
             while True:
@@ -4417,21 +4409,42 @@ class AsyncBicchiere(Bicchiere):
 
     @classmethod
     def demo_app(cls):
-        app = cls(name="Demo Async App")
+        app = cls(name="Demo Async App", wsgi_app = Bicchiere.demo_app())
         app.counter = 0
-        app.wsgi_app = Bicchiere.demo_app()
+        #app.wsgi_app = Bicchiere.demo_app()
 
 
         @app.get("/echo/wstest")
-        async def wstest(evt):
-            text: str = evt.get("text") or evt.get("bytes").decode()
-            app.logger.info(f"\n\n/echo/wstest received '{text}'\n\n")
-            dt = datetime.now()
-            sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
-            full_text = f"\tECHO at ({sdate}):\t{repr(text)}"
-            app.logger.info(f"Returning ws message: '{full_text}'\n\n")
-            #return text.upper()
-            return full_text
+        async def wstest():
+            delayed_messages = []
+            while True:
+                event = await app.receive()
+                if event['type'] == 'websocket.connect':
+                    app.logger.info("Accepting incoming websocket connection request.")
+                    await app.send({'type': 'websocket.accept'})
+                    delayed_messages.append('Ciao, Straniero!')
+                elif event['type'] == 'websocket.disconnect':
+                    app.logger.info("Handling websocket disconnect...")
+                    break
+                elif event['type'] == 'websocket.receive':
+                    if len(delayed_messages):
+                        msg = delayed_messages.pop()
+                        app.logger.info(f"Should send msg '{msg}' now, but won't.")
+                        #await app.send({'type': 'websocket.send', 'text': msg})
+                        await asyncio.sleep(0.01)
+                    text = event['text'] if event.get('text') else event['bytes'].decode()
+                    app.logger.info(f"\n\n/echo/wstest received '{text}'\n\n")
+                    dt = datetime.now()
+                    sdate = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    full_text = f"\tECHO at ({sdate}):\t{repr(text)}"
+                    app.logger.info(f"Returning ws message: '{full_text}'\n\n")
+                    await app.send({
+                        'type': 'websocket.send',
+                        'text': full_text
+                    })
+                else:
+                    app.logger.debug(f"Received event type: {event.get('type')} (Don't know what to do with that...)")
+                    break
 
         @app.get("/showscope")
         async def showscope():
@@ -4460,7 +4473,7 @@ class AsyncBicchiere(Bicchiere):
         async def myf42():
             return await app.redirect("/factorial/42")
 
-        Bicchiere.config.apptype = "ASGI"
+        #Bicchiere.config.apptype = "ASGI"
         return app
 
 # End AsyncBicchiere
