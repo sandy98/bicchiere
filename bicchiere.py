@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 9, 1)
+    __version__ = (1, 9, 2)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -3280,6 +3280,18 @@ class Bicchiere(BicchiereMiddleware):
         menu.addItem(dropdown)
         menu.addItem(MenuItem("About", "/about"))
 
+
+        @app.get("/demo/hello/<name>")
+        @app.get("/demo/hello")
+        #@app.plain_content()
+        async def hello(name="Straniero"):
+            return f"""
+            <h1>Ciao, {name.title()}!</h1>
+            <p>Bicchiere ti saluta.</p>
+            <p></p>
+            <p>Bicchiere v{app.version} in modo {'ASGI' if app.is_asgi(app) else 'WSGI'}</p>
+            """
+
         @app.get("/cgi")
         def cgi():
             retval = """
@@ -4341,30 +4353,25 @@ class AsyncBicchiere(Bicchiere):
             raise HTTPException(f"Received a message type({self.msgtype}) this app can't handle.")
 
         async def diamocidafare(status_msg, response):
-            status = int(status_msg.split(" ", 1)[0])
+            status = int(Bicchiere.tobytes(status_msg).split(b" ", 1)[0])
             body = await self._send_response(status_msg, response)
             contents = dict(type='http.response.body', body=self.tobytes(body), more_body=False)
             try:
-                await self.send(dict(type="http.response.start", status=status, headers=self.headers.items()))
+                bheaders = [(Bicchiere.tobytes(k), Bicchiere.tobytes(v)) for k, v in self.headers.items()]
+                await self.send(dict(type="http.response.start", status=status, headers=bheaders))
                 self.headers_sent = True
-            except:
-                pass
+            except Exception as exc:
+                self.logger.error(f"Error at 'diamocidafare': {repr(exc)}")
             try:
                 sentcontents = await self.send(contents)
                 self.headers_sent = False
-            except:
+            except Exception as exc:
+                self.logger.error(f"Error at 'diamocidafare': {repr(exc)}")
                 sentcontents = None
             finally:
                 return sentcontents
 
         if self.msgtype in ["http", "https"]:
-
-            if self.wsgi_app and self.is_wsgi(self.wsgi_app):
-                try:
-                    asgi_app = WsgiToAsgi(self.wsgi_app)
-                    return await asgi_app(self.scope, self.receive, self.send)
-                except Exception as exc:
-                    self.logger.error(f"Exeption while trying to convert WSGI app to ASGI: {repr(exc)}")
 
             status_msg, response = self._try_static()
             if status_msg and response:
@@ -4392,6 +4399,15 @@ class AsyncBicchiere(Bicchiere):
                 self.logger.info(f"Proceeding from _try_mount with status: {status_msg}")
                 return await diamocidafare(status_msg, response)
 
+            if self.wsgi_app and self.is_wsgi(self.wsgi_app):
+                try:
+                    asgi_app = WsgiToAsgi(self.wsgi_app)
+                    return await asgi_app(self.scope, self.receive, self.send)
+                except Exception as exc:
+                    self.logger.error(f"Exeption while trying to convert WSGI app to ASGI: {repr(exc)}")
+                    err = b"500 Server Error"
+                    return await diamocidafare(err, err) 
+
             status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL.")
             self.logger.info(f"Resource {self.full_path} not found.\n")
             status = int(status_msg.split(" ", 1)[0])
@@ -4401,6 +4417,7 @@ class AsyncBicchiere(Bicchiere):
                 await self.send(dict(type="http.response.start", status=status, headers=[('Content-Type', 'text/html; charset=utf-8')]))
                 self.headers_sent = True
             return await self.send(contents)
+
         elif self.msgtype in ["websocket"]:
             self.logger.debug("Received message type 'websocket'.\nThis has been processed elsewhere and thus, this message should never appear.")
         else:
@@ -4464,12 +4481,15 @@ class AsyncBicchiere(Bicchiere):
         @app.get("/demo/hello/<name>")
         @app.get("/demo/hello")
         #@app.plain_content()
-        def hello(name="Straniero"):
-            return f"<h1>Ciao, {name.title()}!</h1>\n<p>Bicchiere ti saluta.</p>"
+        async def hello(name="Straniero"):
+            return f"""
+            <h1>Ciao, {name.title()}!</h1>
+            <p>Bicchiere ti saluta.</p>
+            <p></p>
+            <p>Bicchiere v{app.version} in modo {'ASGI' if app.is_asgi(app) else 'WSGI'}</p>
+            """
 
-        # app.mount("/", app.wsgi_app)
-
-        @app.get("demo/f42")
+        @app.get("/demo/f42")
         async def myf42():
             return await app.redirect("/factorial/42")
 
