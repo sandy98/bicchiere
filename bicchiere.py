@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 9, 2)
+    __version__ = (1, 9, 3)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -1571,7 +1571,7 @@ class BicchiereMiddleware:
             "SERVER_PROTOCOL": "HTTP/%s" % scope.get("http_version", "1.1"),
             "wsgi.version": (1, 0),
             "wsgi.url_scheme": scope.get("scheme", "http"),
-            "wsgi.input": BytesIO(body),
+            "wsgi.input": BytesIO(body) if type(body) == bytes else body,
             "wsgi.errors": BytesIO(),
             "wsgi.multithread": True,
             "wsgi.multiprocess": True,
@@ -4288,6 +4288,24 @@ class AsyncBicchiere(Bicchiere):
                 self.logger.debug(f"Received event type: {event.get('type')} (Don't know what to do with that...)")
                 break
 
+    async def _load_request_body(self):
+        if self.request_body_loaded:
+            return
+        if self.body.__class__.__name__ != "bytes":
+            if hasattr(self.body, "seek"):
+                self.body.seek(0)
+            if hasattr(self.body, "read"):
+                self.body = self.body.read()
+        more_body = True
+        while more_body:
+            msg = await self.receive()
+            if msg.get("type") == "http.request":
+                self.body += msg.get("body", b"")
+            more_body = msg.get("more_body", False)
+        self.body = BytesIO(self.body)
+        self.body.seek(0)
+        self.request_body_loaded = True
+
     async def __call__(self, scope, receive, send):
         # self.init_local_data()
         self.scope = scope
@@ -4296,6 +4314,7 @@ class AsyncBicchiere(Bicchiere):
         self.body = b""
         self.environ = self.scope2env(self.scope, self.body)
         self.headers = Headers()
+        self.request_body_loaded = False
 
         self.full_path = self.scope.get('path')
         self.msgtype = self.scope.get("type")
@@ -4312,16 +4331,12 @@ class AsyncBicchiere(Bicchiere):
         if self.msgtype in ["http", "https"]:
             self.logger.info(f"Received a {self.msgtype} message")
             self.logger.info(f"Message contents:\n{repr(self.scope)}")
-            if not self.wsgi_app:
-                more_body = True
-                while more_body:
-                    msg = await self.receive()
-                    if msg.get("type") == "http.request":
-                        self.body += msg.get("body", b"")
-                    more_body = msg.get("more_body", False)
-                self.environ = self.scope2env(self.scope, self.body)
-                self.body = BytesIO(self.body)
-                self.body.seek(0)
+            if not self.wsgi_app and not self.request_body_loaded:
+                await self._load_request_body()
+            self.environ = self.scope2env(self.scope, self.body)
+            self.body = BytesIO(self.body)
+            self.body.seek(0)
+            self.environ.get("wsgi.input").seek(0)
             if not self._test_environ():
                 return [b'']
             self._config_environ()
@@ -4378,6 +4393,12 @@ class AsyncBicchiere(Bicchiere):
                 self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
                 return await diamocidafare(status_msg, response)
 
+            if self.cgi_path in scope.get("path"):
+                await self._load_request_body()
+                self.environ = self.scope2env(self.scope, self.body)
+                self.body = BytesIO(self.body) if type(self.body) == bytes else self.body
+                self.body.seek(0)
+                self.environ.get("wsgi.input").seek(0)
             status_msg, response = self._try_cgi()
             if status_msg and response:
                 self.logger.info(f"Proceeding from _try_static with status: {status_msg}")
@@ -4388,6 +4409,13 @@ class AsyncBicchiere(Bicchiere):
                 self.logger.info(f"Proceeding from _try_default with status: {status_msg}")
                 return await diamocidafare(status_msg, response)
 
+            route = self.get_route_match(self.scope.get('path'))
+            if route and self.scope.get('request_method') != 'GET':
+                await self._load_request_body()
+                self.environ = self.scope2env(self.scope, self.body)
+                self.body = BytesIO(self.body) if type(self.body) == bytes else self.body
+                self.body.seek(0)
+                self.environ.get("wsgi.input").seek(0)
             status_msg, response = await self._try_routes()
 #            if status_msg and response and re.match(r"^[235]", status_msg):
             if status_msg and response:
@@ -4402,9 +4430,14 @@ class AsyncBicchiere(Bicchiere):
             if self.wsgi_app and self.is_wsgi(self.wsgi_app):
                 try:
                     asgi_app = WsgiToAsgi(self.wsgi_app)
+                except Exception as exc:
+                    self.logger.error(f"Exception while trying to convert WSGI app to ASGI: {repr(exc)}")
+                    err = b"500 Server Error"
+                    return await diamocidafare(err, err) 
+                try:
                     return await asgi_app(self.scope, self.receive, self.send)
                 except Exception as exc:
-                    self.logger.error(f"Exeption while trying to convert WSGI app to ASGI: {repr(exc)}")
+                    self.logger.error(f"Exception while trying to serve content from WSGI app: {repr(exc)}")
                     err = b"500 Server Error"
                     return await diamocidafare(err, err) 
 
@@ -5544,13 +5577,15 @@ class WsgiToAsgiInstance:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             raise ValueError("WSGI wrapper received a non-HTTP scope")
+            #return b""
         self.scope = scope
         with SpooledTemporaryFile(max_size=65536) as body:
             # Alright, wait for the http.request messages
             while True:
                 message = await receive()
-                if message["type"] != "http.request":
+                if message["type"] not in ["http.request", "http.disconnect"]:
                     raise ValueError("WSGI wrapper received a non-HTTP-request message")
+                #if message["type"] == "http.request":
                 body.write(message.get("body", b""))
                 if not message.get("more_body"):
                     break
