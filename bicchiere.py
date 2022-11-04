@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 9, 3)
+    __version__ = (1, 9, 4)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -2745,7 +2745,7 @@ class Bicchiere(BicchiereMiddleware):
                 f"Proceeding from _try_mounted with status: {status_msg}")
             return self._send_response(status_msg, response)
 
-        status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL.")
+        status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " Not found.")
         return self._send_response(status_msg, response)
 
     def get_route_match(self, path):
@@ -4410,7 +4410,7 @@ class AsyncBicchiere(Bicchiere):
                 return await diamocidafare(status_msg, response)
 
             route = self.get_route_match(self.scope.get('path'))
-            if route and self.scope.get('request_method') != 'GET':
+            if route and self.scope.get('method') != 'GET':
                 await self._load_request_body()
                 self.environ = self.scope2env(self.scope, self.body)
                 self.body = BytesIO(self.body) if type(self.body) == bytes else self.body
@@ -4441,7 +4441,7 @@ class AsyncBicchiere(Bicchiere):
                     err = b"500 Server Error"
                     return await diamocidafare(err, err) 
 
-            status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found AT ALL.")
+            status_msg, response = self._abort(404, self.environ.get('PATH_INFO'), " not found.")
             self.logger.info(f"Resource {self.full_path} not found.\n")
             status = int(status_msg.split(" ", 1)[0])
             body = await self._send_response(status_msg, response)
@@ -5385,7 +5385,8 @@ class SyncToAsync:
             raise TypeError("executor must not be set when thread_sensitive is True")
         self._executor = executor
         try:
-            self.__self__ = func.__self__  # type: ignore
+            if hasattr(func, "__self__"):
+                self.__self__ = func.__self__  # type: ignore
         except AttributeError:
             pass
 
@@ -5603,7 +5604,7 @@ class WsgiToAsgiInstance:
             "REQUEST_METHOD": scope["method"],
             "SCRIPT_NAME": scope.get("root_path", "").encode("utf8").decode("latin1"),
             "PATH_INFO": scope["path"].encode("utf8").decode("latin1"),
-            "QUERY_STRING": scope["query_string"].decode("ascii"),
+            "QUERY_STRING": scope["query_string"].encode("utf-8").decode("ascii"),
             "SERVER_PROTOCOL": "HTTP/%s" % scope["http_version"],
             "wsgi.version": (1, 0),
             "wsgi.url_scheme": scope.get("scheme", "http"),
@@ -5718,9 +5719,9 @@ def main():
     server_choices = Bicchiere.known_wsgi_servers + Bicchiere.known_asgi_servers
     parser = argparse.ArgumentParser(description='Command line arguments for Bicchiere')
     parser.add_argument('-p', '--port', type=int, default=8086, help="Server port number.")
+    parser.add_argument('-a', '--addr', type=str, default="127.0.0.1", help="Server address.")
     #parser.add_argument('--app', type=str, default="bicchiere:application", help="App to serve.")
     parser.add_argument('--app', type=str, default="bicchiere:asgi_application", help="App to serve.")
-    parser.add_argument('-a', '--addr', type=str, default="127.0.0.1", help="Server address.")
     #parser.add_argument('-s', '--server', type=str, default="bicchiereserver", help="Server software.", choices=server_choices)
     parser.add_argument('-s', '--server', type=str, default="uvicorn", help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version and quits")
