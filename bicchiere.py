@@ -1525,7 +1525,7 @@ default_config = SuperDict({
 class BicchiereMiddleware:
     "Base class for everything Bicchiere"
 
-    __version__ = (1, 9, 4)
+    __version__ = (1, 9, 5)
     __author__ = "Domingo E. Savoretti"
     config = default_config
     template_filters = {}
@@ -5720,10 +5720,10 @@ def main():
     parser = argparse.ArgumentParser(description='Command line arguments for Bicchiere')
     parser.add_argument('-p', '--port', type=int, default=8086, help="Server port number.")
     parser.add_argument('-a', '--addr', type=str, default="127.0.0.1", help="Server address.")
-    #parser.add_argument('--app', type=str, default="bicchiere:application", help="App to serve.")
-    parser.add_argument('--app', type=str, default="bicchiere:asgi_application", help="App to serve.")
-    #parser.add_argument('-s', '--server', type=str, default="bicchiereserver", help="Server software.", choices=server_choices)
-    parser.add_argument('-s', '--server', type=str, default="uvicorn", help="Server software.", choices=server_choices)
+    parser.add_argument('--app', type=str, default="bicchiere:application", help="App to serve.")
+    #parser.add_argument('--app', type=str, default="bicchiere:asgi_application", help="App to serve.")
+    parser.add_argument('-s', '--server', type=str, default="bicchiereserver", help="Server software.", choices=server_choices)
+    #parser.add_argument('-s', '--server', type=str, default="uvicorn", help="Server software.", choices=server_choices)
     parser.add_argument('-V', '--version', action="store_true", help="Outputs Bicchiere version and quits")
     parser.add_argument('-D', '--debug', action="store_true", help="Turn on debugging mode")
 
